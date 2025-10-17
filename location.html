@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Dashboard - Water Monitoring</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'water-blue': '#0ea5e9',
+                        'water-cyan': '#06b6d4',
+                        'water-teal': '#0d9488'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Back Button and Title -->
+                <div class="flex items-center space-x-4">
+                    <button 
+                        onclick="window.history.back()" 
+                        class="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                    >
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Back to Map</span>
+                    </button>
+                    <div class="h-6 w-px bg-gray-300"></div>
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-gradient-to-r from-water-blue to-water-cyan rounded-lg flex items-center justify-center">
+                            <i class="fas fa-map-marker-alt text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <h1 id="locationTitle" class="text-xl font-bold text-gray-900">Loading...</h1>
+                            <p class="text-xs text-gray-500">Sensor Details</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Info and Logout -->
+                <div class="flex items-center space-x-4">
+                    <div id="userInfo" class="hidden sm:block"></div>
+                    <button 
+                        id="logoutButton"
+                        class="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                    >
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span class="hidden sm:inline">Logout</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Loading State -->
+        <div id="loadingState" class="flex items-center justify-center py-12">
+            <div class="text-center">
+                <div class="w-12 h-12 border-4 border-water-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p class="text-gray-600">Loading sensor data...</p>
+            </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="hidden">
+            <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-4"></i>
+                <h3 class="text-lg font-semibold text-red-800 mb-2">Sensor Not Found</h3>
+                <p class="text-red-600 mb-4">The requested sensor could not be found or you don't have access to it.</p>
+                <button 
+                    onclick="window.location.href='index.html'" 
+                    class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                    Return to Dashboard
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="mainDashboard" class="hidden space-y-6">
+            <!-- Status Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Current Value Card -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Current Reading</p>
+                            <p id="currentValue" class="text-3xl font-bold text-gray-900 mt-2">--</p>
+                            <p id="currentUnit" class="text-sm text-gray-500">units</p>
+                        </div>
+                        <div class="w-12 h-12 bg-gradient-to-r from-water-blue to-water-cyan rounded-lg flex items-center justify-center">
+                            <i class="fas fa-tachometer-alt text-white text-xl"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div id="valueStatus" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium">
+                            <i class="fas fa-circle mr-1"></i>
+                            Normal
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Last Update Card -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Last Update</p>
+                            <p id="lastUpdateTime" class="text-lg font-semibold text-gray-900 mt-2">--</p>
+                            <p id="lastUpdateRelative" class="text-sm text-gray-500">--</p>
+                        </div>
+                        <div class="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-clock text-white text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 24h Average Card -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">24h Average</p>
+                            <p id="averageValue" class="text-2xl font-bold text-gray-900 mt-2">--</p>
+                            <p id="averageTrend" class="text-sm">--</p>
+                        </div>
+                        <div class="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-chart-bar text-white text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Points Card -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Data Points</p>
+                            <p id="dataPointsCount" class="text-2xl font-bold text-gray-900 mt-2">--</p>
+                            <p class="text-sm text-gray-500">Last 24h</p>
+                        </div>
+                        <div class="w-12 h-12 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-database text-white text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Real-time Chart -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-lg font-semibold text-gray-900">Real-time Data</h3>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span class="text-sm text-gray-600">Live</span>
+                        </div>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="realtimeChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Historical Chart -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-lg font-semibold text-gray-900">Historical Trend</h3>
+                        <select id="timeRangeSelect" class="px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
+                            <option value="1h">Last Hour</option>
+                            <option value="6h">Last 6 Hours</option>
+                            <option value="24h" selected>Last 24 Hours</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="30d">Last 30 Days</option>
+                        </select>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="historicalChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Table -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-lg font-semibold text-gray-900">Recent Readings</h3>
+                        <button 
+                            id="exportBtn"
+                            class="px-3 py-2 text-sm bg-water-blue text-white rounded-lg hover:bg-water-cyan transition-colors"
+                        >
+                            <i class="fas fa-download mr-2"></i>Export CSV
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Timestamp
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Value
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Status
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Change
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTableBody" class="bg-white divide-y divide-gray-200">
+                            <!-- Dynamic content -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <p class="text-sm text-gray-700">
+                            Showing <span id="showingCount">0</span> of <span id="totalCount">0</span> readings
+                        </p>
+                        <div class="flex space-x-2">
+                            <button 
+                                id="prevBtn"
+                                class="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                disabled
+                            >
+                                Previous
+                            </button>
+                            <button 
+                                id="nextBtn"
+                                class="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                disabled
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sensor Information -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Sensor Information</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Sensor ID</label>
+                            <p id="sensorId" class="mt-1 text-sm text-gray-900 font-mono">--</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Location</label>
+                            <p id="sensorLocation" class="mt-1 text-sm text-gray-900">--</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Coordinates</label>
+                            <p id="sensorCoordinates" class="mt-1 text-sm text-gray-900 font-mono">--</p>
+                        </div>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Status</label>
+                            <div id="sensorStatus" class="mt-1">--</div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Data Range</label>
+                            <p id="dataRange" class="mt-1 text-sm text-gray-900">--</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Update Frequency</label>
+                            <p class="mt-1 text-sm text-gray-900">Every 30 seconds</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="env-config.js"></script>
+    <script src="config.js"></script>
+    <script src="auth.js"></script>
+    <script src="location.js"></script>
+</body>
+</html>
