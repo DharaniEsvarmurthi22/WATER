@@ -1,30 +1,50 @@
-// KML/GeoJSON Overlay Configuration
-// Add your custom overlays here - they will load automatically
+// Advanced Overlays Configuration with Multiple Storage Options
+// You can now load KML files from: Local files, Supabase Storage, or External URLs
 
 const OVERLAY_CONFIG = {
     // Enable/disable auto-loading
     autoLoad: true,
     
+    // Supabase Storage Settings
+    useSupabaseStorage: true,
+    storageBucket: 'kml-overlays',  // Supabase storage bucket name
+    
     // List of overlay files to load automatically
     overlays: [
+        // ═══════════════════════════════════════════════════════
+        // METHOD 1: Local Files (in frontend/ folder)
+        // Best for: Demo, testing, small files
+        // ═══════════════════════════════════════════════════════
         {
             name: 'Nallampatti Cluster',
+            source: 'local',  // Loads from frontend/ folder
             file: 'nallampatti_cluster.kml',
             enabled: true,
             description: '7 villages in Salem district'
-        }
-        // Add more overlays here in the future:
+        },
+        
+        // ═══════════════════════════════════════════════════════
+        // METHOD 2: Supabase Storage (Recommended for Production!)
+        // Best for: Large files, frequently updated maps, production
+        // ═══════════════════════════════════════════════════════
         // {
-        //     name: 'Coimbatore Region',
-        //     file: 'coimbatore_region.kml',
+        //     name: 'Tamil Nadu Districts',
+        //     source: 'supabase',  // Loads from Supabase Storage
+        //     file: 'tn-districts.kml',  // Just filename (in kml-overlays bucket)
         //     enabled: true,
-        //     description: 'Coimbatore water bodies'
+        //     description: 'All district boundaries'
         // },
+        
+        // ═══════════════════════════════════════════════════════
+        // METHOD 3: External URL
+        // Best for: Government data, external sources
+        // ═══════════════════════════════════════════════════════
         // {
-        //     name: 'Chennai Cluster',
-        //     file: 'chennai_cluster.geojson',
-        //     enabled: false,  // Set to true to auto-load
-        //     description: 'Chennai lakes and ponds'
+        //     name: 'Government Data',
+        //     source: 'url',  // Loads from any URL
+        //     file: 'https://example.com/data/boundaries.kml',
+        //     enabled: false,
+        //     description: 'Official boundaries'
         // }
     ]
 };

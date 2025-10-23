@@ -42,7 +42,7 @@ class MapManager {
     }
     
     async loadDefaultKMLOverlays() {
-        // Auto-load KML/GeoJSON overlays from configuration
+        // Auto-load KML/GeoJSON overlays from multiple sources
         if (!this.overlayConfig.autoLoad) {
             console.log('ℹ️ Auto-load overlays is disabled in config');
             return;
@@ -59,21 +59,51 @@ class MapManager {
 
         for (const overlay of enabledOverlays) {
             try {
-                const response = await fetch(overlay.file);
+                let fileUrl;
+                
+                // Determine source and build URL
+                switch (overlay.source) {
+                    case 'local':
+                        // Load from frontend/ folder
+                        fileUrl = overlay.file;
+                        break;
+                        
+                    case 'supabase':
+                        // Load from Supabase Storage
+                        const bucket = this.overlayConfig.storageBucket || 'kml-overlays';
+                        const supabaseUrl = window.ENV_CONFIG?.SUPABASE_URL;
+                        if (!supabaseUrl) {
+                            console.warn(`⚠️ Supabase URL not configured for: ${overlay.name}`);
+                            continue;
+                        }
+                        fileUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${overlay.file}`;
+                        break;
+                        
+                    case 'url':
+                        // Load from external URL
+                        fileUrl = overlay.file;
+                        break;
+                        
+                    default:
+                        // Fallback to local if source not specified
+                        fileUrl = overlay.file;
+                }
+                
+                const response = await fetch(fileUrl);
                 if (response.ok) {
                     const text = await response.text();
                     
-                    // Determine file type
+                    // Determine file type and load
                     if (overlay.file.endsWith('.kml')) {
                         await this.loadKML(text, overlay.name);
-                        console.log(`✅ Loaded KML: ${overlay.name}`);
+                        console.log(`✅ Loaded KML: ${overlay.name} (${overlay.source})`);
                     } else if (overlay.file.endsWith('.geojson') || overlay.file.endsWith('.json')) {
                         const geojson = JSON.parse(text);
                         await this.loadGeoJSON(geojson, overlay.name);
-                        console.log(`✅ Loaded GeoJSON: ${overlay.name}`);
+                        console.log(`✅ Loaded GeoJSON: ${overlay.name} (${overlay.source})`);
                     }
                 } else {
-                    console.warn(`⚠️ Could not load: ${overlay.file}`);
+                    console.warn(`⚠️ Could not load: ${overlay.file} (${response.status})`);
                 }
             } catch (error) {
                 console.warn(`⚠️ Error loading ${overlay.name}:`, error.message);
