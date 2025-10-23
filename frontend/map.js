@@ -6,6 +6,7 @@ class MapManager {
         this.markers = [];
         this.kmlLayers = [];
         this.heatmapLayer = null;
+        this.overlayConfig = window.OVERLAY_CONFIG || { autoLoad: false, overlays: [] };
         this.layersVisible = {
             sensors: true,
             heatmap: false,
@@ -31,11 +32,52 @@ class MapManager {
             await this.initializeMap();
             this.setupEventListeners();
             this.addVillageMarkers();
+            await this.loadDefaultKMLOverlays(); // Load KML automatically
             this.restoreMapState();
             this.hideLoadingOverlay();
         } catch (error) {
             console.error('Map initialization error:', error);
             this.showError('Failed to initialize map. Please refresh the page.');
+        }
+    }
+    
+    async loadDefaultKMLOverlays() {
+        // Auto-load KML/GeoJSON overlays from configuration
+        if (!this.overlayConfig.autoLoad) {
+            console.log('ℹ️ Auto-load overlays is disabled in config');
+            return;
+        }
+
+        const enabledOverlays = this.overlayConfig.overlays.filter(o => o.enabled);
+        
+        if (enabledOverlays.length === 0) {
+            console.log('ℹ️ No overlays enabled in configuration');
+            return;
+        }
+
+        console.log(`📍 Loading ${enabledOverlays.length} overlay(s)...`);
+
+        for (const overlay of enabledOverlays) {
+            try {
+                const response = await fetch(overlay.file);
+                if (response.ok) {
+                    const text = await response.text();
+                    
+                    // Determine file type
+                    if (overlay.file.endsWith('.kml')) {
+                        await this.loadKML(text, overlay.name);
+                        console.log(`✅ Loaded KML: ${overlay.name}`);
+                    } else if (overlay.file.endsWith('.geojson') || overlay.file.endsWith('.json')) {
+                        const geojson = JSON.parse(text);
+                        await this.loadGeoJSON(geojson, overlay.name);
+                        console.log(`✅ Loaded GeoJSON: ${overlay.name}`);
+                    }
+                } else {
+                    console.warn(`⚠️ Could not load: ${overlay.file}`);
+                }
+            } catch (error) {
+                console.warn(`⚠️ Error loading ${overlay.name}:`, error.message);
+            }
         }
     }
     
