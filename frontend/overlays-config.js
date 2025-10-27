@@ -12,15 +12,14 @@ const OVERLAY_CONFIG = {
     // List of overlay files to load automatically
     overlays: [
         // ═══════════════════════════════════════════════════════
-        // METHOD 1: Local Files (in frontend/ folder)
-        // Best for: Demo, testing, small files
+        // METHOD 2: Supabase Storage (Production - Currently Active)
         // ═══════════════════════════════════════════════════════
         {
             name: 'Nallampatti Cluster',
-            source: 'local',  // Loads from frontend/ folder
+            source: 'supabase',  // Loads from Supabase Storage
             file: 'nallampatti_cluster.kml',
             enabled: true,
-            description: '7 villages in Salem district'
+            description: '5 villages in Salem district'
         },
         
         // ═══════════════════════════════════════════════════════
