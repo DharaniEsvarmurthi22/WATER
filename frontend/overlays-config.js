@@ -4,11 +4,11 @@
 const OVERLAY_CONFIG = {
     // Enable/disable auto-loading
     autoLoad: true,
-    
+
     // Supabase Storage Settings
     useSupabaseStorage: true,
     storageBucket: 'kml-overlays',  // Supabase storage bucket name
-    
+
     // List of overlay files to load automatically
     overlays: [
         // ═══════════════════════════════════════════════════════
@@ -21,7 +21,7 @@ const OVERLAY_CONFIG = {
             enabled: true,
             description: '5 villages in Salem district'
         },
-        
+
         // ═══════════════════════════════════════════════════════
         // METHOD 2: Supabase Storage (Recommended for Production!)
         // Best for: Large files, frequently updated maps, production
@@ -33,7 +33,7 @@ const OVERLAY_CONFIG = {
         //     enabled: true,
         //     description: 'All district boundaries'
         // },
-        
+
         // ═══════════════════════════════════════════════════════
         // METHOD 3: External URL
         // Best for: Government data, external sources
