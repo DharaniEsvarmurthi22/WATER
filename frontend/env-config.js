@@ -25,9 +25,15 @@ const ENV_CONFIG = {
     ENABLE_LOCATION_TRACKING: true
 };
 
+// Supabase Configuration
+ENV_CONFIG.SUPABASE_URL = 'https://uvqcctheqvuilwfbpqcd.supabase.co';
+ENV_CONFIG.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2cWNjdGhlcXZ1aWx3ZmJwcWNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNDA0NDgsImV4cCI6MjA3NjcxNjQ0OH0.BDPOk3CicghYD18lqRCvITbLyHKLP_mQWtprXrkXphs';
+
 // Make configuration available globally
 window.ENV_CONFIG = ENV_CONFIG;
+
+// Backward compatibility
 window.ENV = {
-    SUPABASE_URL: 'https://uvqcctheqvuilwfbpqcd.supabase.co',
-    SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2cWNjdGhlcXZ1aWx3ZmJwcWNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNDA0NDgsImV4cCI6MjA3NjcxNjQ0OH0.BDPOk3CicghYD18lqRCvITbLyHKLP_mQWtprXrkXphs'
+    SUPABASE_URL: ENV_CONFIG.SUPABASE_URL,
+    SUPABASE_ANON_KEY: ENV_CONFIG.SUPABASE_ANON_KEY
 };
