@@ -422,6 +422,32 @@ class LocationDashboard {
                 name: 'Porur',
                 coordinates: [80.1564, 13.0358],
                 description: 'Chennai water quality monitoring station'
+            },
+            // Nallampatti cluster villages
+            'nallampatti': {
+                name: 'Nallampatti',
+                coordinates: [78.1667, 11.5833],
+                description: 'Water quality monitoring station - Nallampatti'
+            },
+            'poolampatti': {
+                name: 'Poolampatti',
+                coordinates: [78.1500, 11.6000],
+                description: 'Water quality monitoring station - Poolampatti'
+            },
+            'thumbalpatti': {
+                name: 'Thumbalpatti',
+                coordinates: [78.2000, 11.5700],
+                description: 'Water quality monitoring station - Thumbalpatti'
+            },
+            'karipatti': {
+                name: 'Karipatti',
+                coordinates: [78.1800, 11.5500],
+                description: 'Water quality monitoring station - Karipatti'
+            },
+            'mallamooppampatti': {
+                name: 'Mallamooppampatti',
+                coordinates: [78.1800, 11.6100],
+                description: 'Water quality monitoring station - Mallamooppampatti'
             }
         };
         
@@ -603,8 +629,9 @@ class LocationDashboard {
     updateSensorInfo() {
         if (!this.sensorData) return;
 
-        // Update header
-        document.getElementById('locationTitle').textContent = this.sensorData.name;
+        // Update header - use database location name if available
+        const locationName = this.locationDetails?.name || this.sensorData.name;
+        document.getElementById('locationTitle').textContent = locationName;
 
         // Update current value card
         document.getElementById('currentValue').textContent = this.sensorData.value.toFixed(1);
