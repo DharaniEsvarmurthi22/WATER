@@ -28,45 +28,8 @@ function initializeSupabase() {
     return false;
 }
 
-// Actual monitoring locations - Chennai and Coimbatore villages
-const sampleLocations = [
-    {
-        id: 'ukkadam',
-        name: "Ukkadam",
-        description: "Coimbatore water quality monitoring station",
-        coordinates: [76.9558, 10.9987],
-        status: "active",
-        lastReading: 85.2,
-        sensors: ["ESP32_UK_001", "ESP32_UK_002"]
-    },
-    {
-        id: 'singanallur',
-        name: "Singanallur",
-        description: "Coimbatore water quality monitoring station",
-        coordinates: [77.0011, 10.9835],
-        status: "active",
-        lastReading: 88.5,
-        sensors: ["ESP32_SG_001", "ESP32_SG_002"]
-    },
-    {
-        id: 'redhills',
-        name: "Red Hills",
-        description: "Chennai water reservoir monitoring station",
-        coordinates: [80.1167, 13.1594],
-        status: "active",
-        lastReading: 82.3,
-        sensors: ["ESP32_RH_001", "ESP32_RH_002"]
-    },
-    {
-        id: 'porur',
-        name: "Porur",
-        description: "Chennai water quality monitoring station",
-        coordinates: [80.1564, 13.0358],
-        status: "active",
-        lastReading: 79.6,
-        sensors: ["ESP32_PR_001", "ESP32_PR_002"]
-    }
-];
+// Dynamic locations - loaded from database
+let sampleLocations = [];
 
 // Fetch real sensor data from Supabase
 async function fetchSensorData() {
@@ -76,8 +39,18 @@ async function fetchSensorData() {
     }
 
     try {
-        // Fetch latest readings for each sensor
-        const { data: readings, error } = await supabase
+        // Step 1: Fetch all locations from database
+        const { data: locations, error: locError } = await supabase
+            .from('locations')
+            .select('*')
+            .order('name');
+
+        if (locError) throw locError;
+
+        console.log('📍 Fetched locations from database:', locations);
+
+        // Step 2: Fetch latest readings for each sensor
+        const { data: readings, error: readError } = await supabase
             .from('sensor_readings')
             .select(`
                 sensor_id,
@@ -86,11 +59,25 @@ async function fetchSensorData() {
                 timestamp
             `)
             .order('timestamp', { ascending: false })
-            .limit(100);
+            .limit(200);
 
-        if (error) throw error;
+        if (readError) throw readError;
 
         console.log('📊 Fetched sensor readings:', readings);
+
+        // Step 3: Convert database locations to frontend format
+        if (locations && locations.length > 0) {
+            sampleLocations = locations.map(loc => ({
+                id: loc.location_id || loc.id,
+                name: loc.name,
+                description: `Water quality monitoring station - ${loc.name}`,
+                coordinates: [loc.longitude || 0, loc.latitude || 0],
+                status: "active",
+                lastReading: 0,
+                sensors: [],
+                dbId: loc.id // Store database UUID for reference
+            }));
+        }
 
         // Process and update location data
         if (readings && readings.length > 0) {
@@ -99,6 +86,16 @@ async function fetchSensorData() {
             filterReadings(); // Apply current filters
             sensorData.lastUpdate = new Date();
             updateStatistics();
+        } else {
+            // No readings yet, but still show locations
+            sensorData.locations = sampleLocations;
+            updateLocationsList();
+            
+            // Refresh map markers even without readings
+            if (window.mapManager && window.mapManager.addVillageMarkers) {
+                console.log('🗺️ Refreshing map markers with database locations (no readings yet)');
+                window.mapManager.addVillageMarkers();
+            }
         }
 
     } catch (error) {
@@ -123,7 +120,7 @@ function updateLocationsWithData(readings) {
     });
 
     // Update each location with its readings
-    sampleLocations.forEach(location => {
+    sensorData.locations.forEach(location => {
         const readings = locationReadings[location.id] || [];
         if (readings.length > 0) {
             // Calculate average reading value for the location
@@ -136,14 +133,18 @@ function updateLocationsWithData(readings) {
             location.status = "inactive";
         }
     });
-
-    sensorData.locations = sampleLocations;
     sensorData.statistics.activeSensors = Object.keys(locationReadings).length * 4; // 4 sensors per location
     sensorData.statistics.avgReading = readings.length > 0 
         ? readings.reduce((sum, r) => sum + parseFloat(r.value), 0) / readings.length 
         : 0;
 
     updateLocationsList();
+    
+    // Refresh map markers with new locations
+    if (window.mapManager && window.mapManager.addVillageMarkers) {
+        console.log('🗺️ Refreshing map markers with new locations');
+        window.mapManager.addVillageMarkers();
+    }
 }
 
 // Subscribe to real-time updates
@@ -218,7 +219,7 @@ function updateLocationsList() {
     const locationItems = document.querySelectorAll('.location-item');
     locationItems.forEach(item => {
         item.addEventListener('click', () => {
-            const locationId = parseInt(item.dataset.id);
+            const locationId = item.dataset.id;
             const location = sensorData.locations.find(loc => loc.id === locationId);
             if (location) {
                 // Remove active class from all items
@@ -232,6 +233,9 @@ function updateLocationsList() {
             }
         });
     });
+    
+    // Update location filter dropdowns dynamically
+    updateLocationFilters();
 }
 
 // Filter locations based on search
@@ -242,6 +246,43 @@ function filterLocations(searchText) {
     );
     sensorData.locations = filteredLocations;
     updateLocationsList();
+}
+
+// Update location filter dropdowns dynamically
+function updateLocationFilters() {
+    const statsLocationFilter = document.getElementById('statsLocationFilter');
+    const locationFilter = document.getElementById('locationFilter');
+    
+    // Get unique locations from data
+    const uniqueLocations = sampleLocations.map(loc => ({
+        id: loc.id,
+        name: loc.name
+    }));
+    
+    // Build options HTML
+    const locationOptions = `
+        <option value="all">All Locations</option>
+        ${uniqueLocations.map(loc => `<option value="${loc.id}">${loc.name}</option>`).join('')}
+    `;
+    
+    // Update both dropdowns
+    if (statsLocationFilter) {
+        const currentValue = statsLocationFilter.value;
+        statsLocationFilter.innerHTML = locationOptions;
+        // Restore selection if it still exists
+        if ([...statsLocationFilter.options].some(opt => opt.value === currentValue)) {
+            statsLocationFilter.value = currentValue;
+        }
+    }
+    
+    if (locationFilter) {
+        const currentValue = locationFilter.value;
+        locationFilter.innerHTML = locationOptions;
+        // Restore selection if it still exists
+        if ([...locationFilter.options].some(opt => opt.value === currentValue)) {
+            locationFilter.value = currentValue;
+        }
+    }
 }
 
 // Update statistics in the UI

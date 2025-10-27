@@ -159,40 +159,9 @@ class MapManager {
         this.markers.forEach(marker => marker.remove());
         this.markers = [];
         
-        // Add filtered markers
-        Object.entries(this.villages).forEach(([city, villages]) => {
-            villages.forEach(v => {
-                // Check if this village is in the filtered list
-                const isFiltered = filteredLocations.some(loc => loc.id === v.id);
-                if (!isFiltered) return;
-                
-                const el = document.createElement('div');
-                el.innerHTML = '<div style="background:blue;width:20px;height:20px;border-radius:50%;border:2px solid white;"></div>';
-                el.style.cursor = 'pointer';
-                
-                const marker = new maplibregl.Marker({ element: el })
-                    .setLngLat(v.coords)
-                    .addTo(this.map);
-                
-                el.addEventListener('click', () => {
-                    this.saveMapState();
-                    window.location.href = `location.html?location=${v.id}`;
-                });
-                
-                const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
-                    <div style="padding:8px;">
-                        <h3 style="font-weight:bold;margin-bottom:4px;">${v.name}</h3>
-                        <p style="color:#666;font-size:12px;">${city}</p>
-                        <button onclick="window.mapManager.saveMapState(); window.location.href='location.html?location=${v.id}'" 
-                                style="margin-top:8px;padding:4px 12px;background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;">
-                            View Dashboard
-                        </button>
-                    </div>
-                `);
-                
-                marker.setPopup(popup);
-                this.markers.push(marker);
-            });
+        // Add filtered markers from the provided locations
+        filteredLocations.forEach(location => {
+            this.addMarkerForLocation(location);
         });
     }
     
@@ -481,37 +450,63 @@ class MapManager {
         this.markers.forEach(m => m.remove());
         this.markers = [];
         
-        Object.entries(this.villages).forEach(([city, villages]) => {
-            villages.forEach(v => {
-                const el = document.createElement('div');
-                el.className = 'village-marker';
-                el.innerHTML = '<div style="background:blue;width:20px;height:20px;border-radius:50%;border:2px solid white;"></div>';
-                el.style.cursor = 'pointer';
-                
-                const marker = new maplibregl.Marker({ element: el })
-                    .setLngLat(v.coords)
-                    .addTo(this.map);
-                
-                el.addEventListener('click', () => {
-                    this.saveMapState();
-                    window.location.href = `location.html?location=${v.id}`;
-                });
-                
-                const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
-                    <div style="padding:8px;">
-                        <h3 style="font-weight:bold;margin-bottom:4px;">${v.name}</h3>
-                        <p style="color:#666;font-size:12px;">${city}</p>
-                        <button onclick="window.mapManager.saveMapState(); window.location.href='location.html?location=${v.id}'" 
-                                style="margin-top:8px;padding:4px 12px;background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;">
-                            View Dashboard
-                        </button>
-                    </div>
-                `);
-                
-                marker.setPopup(popup);
-                this.markers.push(marker);
+        // Use sensorData.locations if available (dynamic from database)
+        const locations = window.sensorData?.locations || [];
+        
+        if (locations.length > 0) {
+            console.log('📍 Adding markers from database locations:', locations);
+            locations.forEach(location => {
+                this.addMarkerForLocation(location);
             });
+        } else {
+            // Fallback to hardcoded villages if no data loaded yet
+            console.log('📍 Using fallback hardcoded villages');
+            Object.entries(this.villages).forEach(([city, villages]) => {
+                villages.forEach(v => {
+                    this.addMarkerForLocation({
+                        id: v.id,
+                        name: v.name,
+                        coordinates: v.coords
+                    });
+                });
+            });
+        }
+    }
+    
+    addMarkerForLocation(location) {
+        const coords = location.coordinates || location.coords;
+        if (!coords || coords.length < 2) {
+            console.warn('⚠️ Skipping location without valid coordinates:', location);
+            return;
+        }
+        
+        const el = document.createElement('div');
+        el.className = 'village-marker';
+        el.innerHTML = '<div style="background:blue;width:20px;height:20px;border-radius:50%;border:2px solid white;"></div>';
+        el.style.cursor = 'pointer';
+        
+        const marker = new maplibregl.Marker({ element: el })
+            .setLngLat(coords)
+            .addTo(this.map);
+        
+        el.addEventListener('click', () => {
+            this.saveMapState();
+            window.location.href = `location.html?location=${location.id}`;
         });
+        
+        const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
+            <div style="padding:8px;">
+                <h3 style="font-weight:bold;margin-bottom:4px;">${location.name}</h3>
+                <p style="color:#666;font-size:12px;">Water quality monitoring</p>
+                <button onclick="window.mapManager.saveMapState(); window.location.href='location.html?location=${location.id}'" 
+                        style="margin-top:8px;padding:4px 12px;background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;">
+                    View Dashboard
+                </button>
+            </div>
+        `);
+        
+        marker.setPopup(popup);
+        this.markers.push(marker);
     }
 
     async loadKML(kmlText, fileName) {

@@ -87,6 +87,9 @@ class LocationDashboard {
                 return;
             }
             
+            // First, fetch location details from database
+            await this.fetchLocationDetailsFromDB();
+            
             const sensorTypes = ['ph', 'turbidity', 'temperature', 'tds'];
             
             for (const sensorType of sensorTypes) {
@@ -101,7 +104,7 @@ class LocationDashboard {
                 
                 if (data && data.length > 0) {
                     const record = data[0];
-                    const locationDetails = this.getLocationDetails(this.locationId);
+                    const locationDetails = this.locationDetails || this.getLocationDetails(this.locationId);
                     const sensorTypeInfo = this.getSensorTypeInfo(sensorType);
                     
                     this.allSensorsData[sensorType] = {
@@ -127,6 +130,43 @@ class LocationDashboard {
         }
     }
     
+    async fetchLocationDetailsFromDB() {
+        try {
+            if (!this.supabase) return;
+            
+            const { data: locationData, error } = await this.supabase
+                .from('locations')
+                .select('*')
+                .eq('location_id', this.locationId)
+                .single();
+            
+            if (error || !locationData) {
+                console.warn('⚠️ Location not found in database, using fallback');
+                return;
+            }
+            
+            console.log('✅ Found location in database:', locationData);
+            
+            // Store location details
+            this.locationDetails = {
+                name: locationData.name,
+                coordinates: [locationData.longitude || 0, locationData.latitude || 0],
+                description: `Water quality monitoring station - ${locationData.name}`,
+                latitude: locationData.latitude,
+                longitude: locationData.longitude
+            };
+            
+            // Update page title
+            const titleElement = document.getElementById('locationTitle');
+            if (titleElement) {
+                titleElement.textContent = locationData.name;
+            }
+            
+        } catch (error) {
+            console.error('❌ Error fetching location details:', error);
+        }
+    }
+    
     createAllSampleData() {
         const sensorTypes = ['ph', 'turbidity', 'temperature', 'tds'];
         sensorTypes.forEach(type => {
@@ -135,7 +175,7 @@ class LocationDashboard {
     }
     
     createSampleForType(sensorType) {
-        const locationDetails = this.getLocationDetails(this.locationId);
+        const locationDetails = this.locationDetails || this.getLocationDetails(this.locationId);
         const sensorTypeInfo = this.getSensorTypeInfo(sensorType);
         
         let sampleValue;
@@ -361,6 +401,7 @@ class LocationDashboard {
     }
     
     getLocationDetails(locationId) {
+        // Hardcoded fallback for known locations
         const locations = {
             'ukkadam': {
                 name: 'Ukkadam',
@@ -384,10 +425,11 @@ class LocationDashboard {
             }
         };
         
+        // Return fallback with capitalized location name
         return locations[locationId] || {
-            name: locationId,
+            name: locationId.charAt(0).toUpperCase() + locationId.slice(1),
             coordinates: [0, 0],
-            description: 'Water quality monitoring station'
+            description: `Water quality monitoring station - ${locationId.charAt(0).toUpperCase() + locationId.slice(1)}`
         };
     }
     

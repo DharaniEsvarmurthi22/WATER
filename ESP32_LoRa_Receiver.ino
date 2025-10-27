@@ -16,7 +16,7 @@
  * 
  * Functionality:
  * - Receives LoRa packets from sender
- * - Parses location and sensor data
+ * - Parses location and sensor data from 5 Nallampatti cluster villages
  * - Sends data to Supabase via WiFi
  * - Real-time dashboard updates
  */
@@ -30,8 +30,8 @@
 // ============================================
 // WiFi Configuration
 // ============================================
-const char* ssid = "realme 8i";           // Your WiFi SSID
-const char* password = "12345678";         // Your WiFi password
+const char* ssid = "Dharani";              // Your WiFi SSID
+const char* password = "ABCDEFGH";         // Your WiFi password
 
 // ============================================
 // Supabase Configuration
@@ -145,13 +145,13 @@ void loop() {
 // Parse LoRa Packet and Send to Supabase
 // ============================================
 void parseAndSendData(String data, int rssi) {
-  // Expected format: "LOC:ukkadam,PH:100.1,TURB:101.1,TEMP:102.1,TDS:103.1"
+  // Expected format: "LOC:nallampatti,PH:100.1,TURB:101.1,TEMP:102.1,TDS:103.1"
 
   // Extract location
   int locIndex = data.indexOf("LOC:");
   if (locIndex < 0) {
     Serial.println("⚠️  Error: No location found!");
-    Serial.println("Expected format: LOC:ukkadam,PH:7.5,TURB:15.3,...\n");
+    Serial.println("Expected format: LOC:nallampatti,PH:7.5,TURB:15.3,...\n");
     return;
   }
 
@@ -261,7 +261,9 @@ bool sendToSupabase(String location, String sensorType, float value, int rssi) {
 
   HTTPClient http;
 
-  // Build sensor_id (e.g., "ukkadam_ph")
+  // Build sensor_id using simple format: "location_sensortype"
+  // Examples: "nallampatti_ph", "poolampatti_turbidity"
+  // This works with ANY location - no hardcoding needed!
   String sensorId = location + "_" + sensorType;
   
   // Supabase RPC endpoint
