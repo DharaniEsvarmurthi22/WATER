@@ -401,58 +401,8 @@ class LocationDashboard {
     }
     
     getLocationDetails(locationId) {
-        // Hardcoded fallback for known locations
-        const locations = {
-            'ukkadam': {
-                name: 'Ukkadam',
-                coordinates: [76.9558, 10.9987],
-                description: 'Coimbatore water quality monitoring station'
-            },
-            'singanallur': {
-                name: 'Singanallur',
-                coordinates: [77.0011, 10.9835],
-                description: 'Coimbatore water quality monitoring station'
-            },
-            'redhills': {
-                name: 'Red Hills',
-                coordinates: [80.1167, 13.1594],
-                description: 'Chennai water reservoir monitoring station'
-            },
-            'porur': {
-                name: 'Porur',
-                coordinates: [80.1564, 13.0358],
-                description: 'Chennai water quality monitoring station'
-            },
-            // Nallampatti cluster villages
-            'nallampatti': {
-                name: 'Nallampatti',
-                coordinates: [78.1667, 11.5833],
-                description: 'Water quality monitoring station - Nallampatti'
-            },
-            'poolampatti': {
-                name: 'Poolampatti',
-                coordinates: [78.1500, 11.6000],
-                description: 'Water quality monitoring station - Poolampatti'
-            },
-            'thumbalpatti': {
-                name: 'Thumbalpatti',
-                coordinates: [78.2000, 11.5700],
-                description: 'Water quality monitoring station - Thumbalpatti'
-            },
-            'karipatti': {
-                name: 'Karipatti',
-                coordinates: [78.1800, 11.5500],
-                description: 'Water quality monitoring station - Karipatti'
-            },
-            'mallamooppampatti': {
-                name: 'Mallamooppampatti',
-                coordinates: [78.1800, 11.6100],
-                description: 'Water quality monitoring station - Mallamooppampatti'
-            }
-        };
-        
-        // Return fallback with capitalized location name
-        return locations[locationId] || {
+        // Return simple fallback - database will provide actual details
+        return {
             name: locationId.charAt(0).toUpperCase() + locationId.slice(1),
             coordinates: [0, 0],
             description: `Water quality monitoring station - ${locationId.charAt(0).toUpperCase() + locationId.slice(1)}`
