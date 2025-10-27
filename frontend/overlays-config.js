@@ -16,7 +16,7 @@ const OVERLAY_CONFIG = {
         // ═══════════════════════════════════════════════════════
         {
             name: 'Nallampatti Cluster',
-            source: 'supabase',  // Loads from Supabase Storage
+            source: 'supabase',  // Loads from Supabase Storage (cloud)
             file: 'nallampatti_cluster.kml',
             enabled: true,
             description: '5 villages in Salem district'
