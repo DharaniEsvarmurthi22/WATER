@@ -548,6 +548,33 @@ class MapManager {
                     'circle-stroke-color': '#ffffff'
                 }
             });
+            
+            // Add click handler for KML points - opens location dashboard
+            this.map.on('click', pointLayerId, (e) => {
+                if (e.features && e.features.length > 0) {
+                    const feature = e.features[0];
+                    const name = feature.properties.name || feature.properties.Name;
+                    
+                    if (name) {
+                        // Convert name to location_id format (lowercase, no spaces)
+                        const locationId = name.toLowerCase().replace(/\s+/g, '');
+                        console.log(`🎯 KML point clicked: "${name}" → Opening location.html?location=${locationId}`);
+                        
+                        // Open location dashboard
+                        window.location.href = `location.html?location=${locationId}`;
+                    }
+                }
+            });
+            
+            // Change cursor to pointer on hover
+            this.map.on('mouseenter', pointLayerId, () => {
+                this.map.getCanvas().style.cursor = 'pointer';
+            });
+            
+            this.map.on('mouseleave', pointLayerId, () => {
+                this.map.getCanvas().style.cursor = '';
+            });
+            
             this.kmlLayers.push({ layerId: pointLayerId, sourceId: pointSourceId, fileName });
         }
         
@@ -589,6 +616,33 @@ class MapManager {
                     'fill-opacity': 0.2 
                 }
             });
+            
+            // Add click handler for KML polygons - opens location dashboard
+            this.map.on('click', polyLayerId, (e) => {
+                if (e.features && e.features.length > 0) {
+                    const feature = e.features[0];
+                    const name = feature.properties.name || feature.properties.Name;
+                    
+                    if (name) {
+                        // Convert name to location_id format (lowercase, no spaces)
+                        const locationId = name.toLowerCase().replace(/\s+/g, '');
+                        console.log(`🎯 KML polygon clicked: "${name}" → Opening location.html?location=${locationId}`);
+                        
+                        // Open location dashboard
+                        window.location.href = `location.html?location=${locationId}`;
+                    }
+                }
+            });
+            
+            // Change cursor to pointer on hover
+            this.map.on('mouseenter', polyLayerId, () => {
+                this.map.getCanvas().style.cursor = 'pointer';
+            });
+            
+            this.map.on('mouseleave', polyLayerId, () => {
+                this.map.getCanvas().style.cursor = '';
+            });
+            
             // Add polygon outline
             this.map.addLayer({
                 id: `${polyLayerId}-outline`,
