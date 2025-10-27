@@ -529,33 +529,83 @@ class MapManager {
             await new Promise(resolve => this.map.once('styledata', resolve));
         }
         
-        this.map.addSource(sourceId, { type: 'geojson', data: geojson });
+        // Separate features by geometry type
+        const points = geojson.features.filter(f => f.geometry.type === 'Point');
+        const lines = geojson.features.filter(f => f.geometry.type === 'LineString' || f.geometry.type === 'MultiLineString');
+        const polygons = geojson.features.filter(f => f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon');
         
-        const geometryType = geojson.features[0]?.geometry?.type;
-        if (geometryType?.includes('Point')) {
+        // Add Point features (villages/markers)
+        if (points.length > 0) {
+            const pointSourceId = `${sourceId}-points`;
+            const pointLayerId = `${layerId}-points`;
+            this.map.addSource(pointSourceId, { 
+                type: 'geojson', 
+                data: { ...geojson, features: points } 
+            });
             this.map.addLayer({
-                id: layerId,
+                id: pointLayerId,
                 type: 'circle',
-                source: sourceId,
-                paint: { 'circle-radius': 6, 'circle-color': '#007cbf' }
+                source: pointSourceId,
+                paint: { 
+                    'circle-radius': 8, 
+                    'circle-color': '#ef4444',
+                    'circle-stroke-width': 2,
+                    'circle-stroke-color': '#ffffff'
+                }
             });
-        } else if (geometryType?.includes('Line')) {
-            this.map.addLayer({
-                id: layerId,
-                type: 'line',
-                source: sourceId,
-                paint: { 'line-color': '#007cbf', 'line-width': 3 }
-            });
-        } else if (geometryType?.includes('Polygon')) {
-            this.map.addLayer({
-                id: layerId,
-                type: 'fill',
-                source: sourceId,
-                paint: { 'fill-color': '#007cbf', 'fill-opacity': 0.4 }
-            });
+            this.kmlLayers.push({ layerId: pointLayerId, sourceId: pointSourceId, fileName });
         }
         
-        this.kmlLayers.push({ layerId, sourceId, fileName });
+        // Add LineString features (roads/boundaries)
+        if (lines.length > 0) {
+            const lineSourceId = `${sourceId}-lines`;
+            const lineLayerId = `${layerId}-lines`;
+            this.map.addSource(lineSourceId, { 
+                type: 'geojson', 
+                data: { ...geojson, features: lines } 
+            });
+            this.map.addLayer({
+                id: lineLayerId,
+                type: 'line',
+                source: lineSourceId,
+                paint: { 
+                    'line-color': '#22c55e', 
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                }
+            });
+            this.kmlLayers.push({ layerId: lineLayerId, sourceId: lineSourceId, fileName });
+        }
+        
+        // Add Polygon features (areas/boundaries)
+        if (polygons.length > 0) {
+            const polySourceId = `${sourceId}-polygons`;
+            const polyLayerId = `${layerId}-polygons`;
+            this.map.addSource(polySourceId, { 
+                type: 'geojson', 
+                data: { ...geojson, features: polygons } 
+            });
+            this.map.addLayer({
+                id: polyLayerId,
+                type: 'fill',
+                source: polySourceId,
+                paint: { 
+                    'fill-color': '#22c55e', 
+                    'fill-opacity': 0.2 
+                }
+            });
+            // Add polygon outline
+            this.map.addLayer({
+                id: `${polyLayerId}-outline`,
+                type: 'line',
+                source: polySourceId,
+                paint: { 
+                    'line-color': '#22c55e', 
+                    'line-width': 2 
+                }
+            });
+            this.kmlLayers.push({ layerId: polyLayerId, sourceId: polySourceId, fileName });
+        }
     }
 
     reloadKMLLayers() {
