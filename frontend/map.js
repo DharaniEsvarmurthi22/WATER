@@ -560,6 +560,9 @@ class MapManager {
                         const locationId = name.toLowerCase().replace(/\s+/g, '');
                         console.log(`🎯 KML point clicked: "${name}" → Opening location.html?location=${locationId}`);
                         
+                        // Save map state before navigating
+                        this.saveMapState();
+                        
                         // Open location dashboard
                         window.location.href = `location.html?location=${locationId}`;
                     }
@@ -627,6 +630,9 @@ class MapManager {
                         // Convert name to location_id format (lowercase, no spaces)
                         const locationId = name.toLowerCase().replace(/\s+/g, '');
                         console.log(`🎯 KML polygon clicked: "${name}" → Opening location.html?location=${locationId}`);
+                        
+                        // Save map state before navigating
+                        this.saveMapState();
                         
                         // Open location dashboard
                         window.location.href = `location.html?location=${locationId}`;
