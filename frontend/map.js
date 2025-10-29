@@ -620,8 +620,8 @@ class MapManager {
                 }
             });
             
-            // Add click handler for KML polygons - opens location dashboard
-            this.map.on('click', polyLayerId, (e) => {
+            // Add click handler for KML polygons - show dynamic popup
+            this.map.on('click', polyLayerId, async (e) => {
                 if (e.features && e.features.length > 0) {
                     const feature = e.features[0];
                     const name = feature.properties.name || feature.properties.Name;
@@ -629,13 +629,10 @@ class MapManager {
                     if (name) {
                         // Convert name to location_id format (lowercase, no spaces)
                         const locationId = name.toLowerCase().replace(/\s+/g, '');
-                        console.log(`🎯 KML polygon clicked: "${name}" → Opening location.html?location=${locationId}`);
+                        console.log(`🎯 KML polygon clicked: "${name}" → location_id: ${locationId}`);
                         
-                        // Save map state before navigating
-                        this.saveMapState();
-                        
-                        // Open location dashboard
-                        window.location.href = `location.html?location=${locationId}`;
+                        // Show dynamic popup with current sensor data
+                        await this.showDynamicPopup(e.lngLat, locationId, feature.properties);
                     }
                 }
             });
@@ -661,6 +658,218 @@ class MapManager {
             });
             this.kmlLayers.push({ layerId: polyLayerId, sourceId: polySourceId, fileName });
         }
+    }
+
+    /**
+     * Show dynamic popup with live sensor data
+     * Fetches popup config and current sensor readings from database
+     */
+    async showDynamicPopup(lngLat, locationId, kmlProperties = {}) {
+        try {
+            console.log(`📊 Building dynamic popup for: ${locationId}`);
+
+            // Fetch popup configuration from database
+            const { data: popupConfig, error: configError } = await window.supabase
+                .from('popup_config')
+                .select('*')
+                .eq('location_id', locationId)
+                .single();
+
+            if (configError) {
+                console.warn('⚠️ No popup config found, using defaults:', configError.message);
+            }
+
+            // Fetch location details
+            const { data: location, error: locationError } = await window.supabase
+                .from('locations')
+                .select('*')
+                .eq('location_id', locationId)
+                .single();
+
+            if (locationError) {
+                console.error('❌ Location not found:', locationError);
+                return;
+            }
+
+            // Fetch latest sensor readings
+            const sensorsToShow = popupConfig?.show_sensors || ['ph', 'turbidity', 'temperature', 'tds'];
+            const sensorPromises = sensorsToShow.map(async (sensorType) => {
+                const sensorId = `${locationId}_${sensorType}`;
+                const { data, error } = await window.supabase
+                    .from('sensor_readings')
+                    .select('value, timestamp')
+                    .eq('sensor_id', sensorId)
+                    .order('timestamp', { ascending: false })
+                    .limit(1)
+                    .single();
+
+                return {
+                    type: sensorType,
+                    value: data?.value || 'N/A',
+                    timestamp: data?.timestamp || null,
+                    error: error
+                };
+            });
+
+            const sensorReadings = await Promise.all(sensorPromises);
+
+            // Build popup HTML
+            const popupHTML = this.buildPopupHTML(
+                location,
+                popupConfig,
+                sensorReadings,
+                kmlProperties
+            );
+
+            // Create and show popup
+            new maplibregl.Popup({ 
+                closeButton: true,
+                closeOnClick: false,
+                maxWidth: '350px'
+            })
+                .setLngLat(lngLat)
+                .setHTML(popupHTML)
+                .addTo(this.map);
+
+            // Add event listener for "View Dashboard" button after popup is added to DOM
+            setTimeout(() => {
+                const viewButton = document.getElementById('view-dashboard-btn');
+                if (viewButton) {
+                    viewButton.addEventListener('click', () => {
+                        this.saveMapState();
+                        window.location.href = `location.html?location=${locationId}`;
+                    });
+                }
+            }, 100);
+
+        } catch (error) {
+            console.error('❌ Error showing dynamic popup:', error);
+        }
+    }
+
+    /**
+     * Build HTML for dynamic popup
+     */
+    buildPopupHTML(location, popupConfig, sensorReadings, kmlProperties) {
+        const title = popupConfig?.popup_title || location.name;
+        const description = popupConfig?.popup_description || '';
+        const customFields = popupConfig?.custom_fields || {};
+        const showLastUpdated = popupConfig?.show_last_updated !== false;
+        const showViewButton = popupConfig?.show_view_button !== false;
+
+        // Sensor icons mapping
+        const sensorIcons = {
+            'ph': '💧',
+            'turbidity': '🌊',
+            'temperature': '🌡️',
+            'tds': '⚡',
+            'dissolved_oxygen': '💨',
+            'conductivity': '⚙️'
+        };
+
+        // Sensor display names
+        const sensorNames = {
+            'ph': 'pH Level',
+            'turbidity': 'Turbidity',
+            'temperature': 'Temperature',
+            'tds': 'TDS',
+            'dissolved_oxygen': 'Dissolved Oxygen',
+            'conductivity': 'Conductivity'
+        };
+
+        // Sensor units
+        const sensorUnits = {
+            'ph': '',
+            'turbidity': 'NTU',
+            'temperature': '°C',
+            'tds': 'ppm',
+            'dissolved_oxygen': 'mg/L',
+            'conductivity': 'µS/cm'
+        };
+
+        // Build sensor readings HTML
+        let sensorsHTML = '';
+        sensorReadings.forEach(sensor => {
+            const icon = sensorIcons[sensor.type] || '📊';
+            const name = sensorNames[sensor.type] || sensor.type.toUpperCase();
+            const unit = sensorUnits[sensor.type] || '';
+            const value = sensor.value !== 'N/A' ? `${sensor.value} ${unit}`.trim() : 'No data';
+            
+            sensorsHTML += `
+                <div class="popup-sensor-row">
+                    <span>${icon} ${name}:</span>
+                    <strong>${value}</strong>
+                </div>
+            `;
+        });
+
+        // Build custom fields HTML
+        let customFieldsHTML = '';
+        if (Object.keys(customFields).length > 0) {
+            customFieldsHTML = '<div class="popup-divider"></div>';
+            for (const [key, value] of Object.entries(customFields)) {
+                customFieldsHTML += `
+                    <div class="popup-info-row">
+                        <span>${key.charAt(0).toUpperCase() + key.slice(1)}:</span>
+                        <span>${value}</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Get most recent timestamp
+        const timestamps = sensorReadings
+            .map(s => s.timestamp)
+            .filter(t => t !== null);
+        
+        let lastUpdatedHTML = '';
+        if (showLastUpdated && timestamps.length > 0) {
+            const mostRecent = new Date(Math.max(...timestamps.map(t => new Date(t))));
+            const timeAgo = this.getTimeAgo(mostRecent);
+            lastUpdatedHTML = `
+                <div class="popup-divider"></div>
+                <div class="popup-timestamp">
+                    📊 Last Updated: ${timeAgo}
+                </div>
+            `;
+        }
+
+        // Build view button HTML
+        let viewButtonHTML = '';
+        if (showViewButton) {
+            viewButtonHTML = `
+                <button id="view-dashboard-btn" class="popup-view-button">
+                    🔍 View Full Dashboard
+                </button>
+            `;
+        }
+
+        return `
+            <div class="dynamic-popup">
+                <div class="popup-header">
+                    <h3>📍 ${title}</h3>
+                    ${description ? `<p class="popup-description">${description}</p>` : ''}
+                </div>
+                <div class="popup-content">
+                    ${sensorsHTML}
+                    ${customFieldsHTML}
+                    ${lastUpdatedHTML}
+                </div>
+                ${viewButtonHTML}
+            </div>
+        `;
+    }
+
+    /**
+     * Get human-readable time ago string
+     */
+    getTimeAgo(date) {
+        const seconds = Math.floor((new Date() - date) / 1000);
+        
+        if (seconds < 60) return `${seconds} seconds ago`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+        return `${Math.floor(seconds / 86400)} days ago`;
     }
 
     reloadKMLLayers() {
