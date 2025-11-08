@@ -12,7 +12,7 @@ class LocationDashboard {
         this.realtimeChannel = null;
         this.currentPage = 1;
         this.pageSize = 20;
-        this.activeSensorType = null; // Currently selected sensor type
+        this.activeSensorType = null; // Default to All Sensors view
         
         this.init();
     }
@@ -29,8 +29,8 @@ class LocationDashboard {
             // If location is provided, extract it
             if (locationParam) {
                 this.locationId = locationParam;
-                this.sensorId = `${locationParam}_ph`; // Default to pH
-                this.activeSensorType = 'ph';
+                this.sensorId = `${locationParam}_ph`; // Default sensor ID
+                this.activeSensorType = null; // Default to All Sensors view
                 console.log('✅ Location parameter provided:', this.locationId);
             } else if (this.sensorId) {
                 // Extract location from sensor_id

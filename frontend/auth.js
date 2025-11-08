@@ -1,12 +1,45 @@
-// Simple Authentication Manager
+// Supabase Authentication Manager
 class AuthManager {
     constructor() {
-        // Fixed credentials
-        this.ADMIN_USERNAME = 'admin';
-        this.ADMIN_PASSWORD = 'admin@1234';
+        this.supabase = null;
+        this.currentUser = null;
+        
+        // Initialize Supabase
+        this.initSupabase();
 
         // Check if we're on the login page
         const isLoginPage = window.location.pathname.includes('login.html');
+
+        // Check authentication status
+        this.checkAuth(isLoginPage);
+    }
+
+    async initSupabase() {
+        try {
+            if (window.ENV && window.ENV.SUPABASE_URL && window.ENV.SUPABASE_ANON_KEY) {
+                this.supabase = window.supabase.createClient(
+                    window.ENV.SUPABASE_URL,
+                    window.ENV.SUPABASE_ANON_KEY
+                );
+                console.log('✅ Supabase Auth initialized');
+                
+                // Get current session
+                const { data: { session } } = await this.supabase.auth.getSession();
+                if (session) {
+                    this.currentUser = session.user;
+                    console.log('✅ User session found:', this.currentUser.email);
+                }
+            } else {
+                console.warn('⚠️ Supabase credentials not found');
+            }
+        } catch (error) {
+            console.error('❌ Failed to initialize Supabase Auth:', error);
+        }
+    }
+
+    async checkAuth(isLoginPage) {
+        // Wait for Supabase to initialize
+        await this.initSupabase();
 
         // If we're authenticated and on login page, redirect to dashboard
         if (this.isAuthenticated() && isLoginPage) {
@@ -149,17 +182,33 @@ class AuthManager {
         }
     }
 
-    handleLogout() {
-        // Clear all auth-related data
-        localStorage.clear();
-        sessionStorage.clear();
-        this.currentUser = null;
-        
-        // Show logout message
-        this.showMessage('Logging out...', 'info');
-        
-        // Force reload and redirect to login page
-        window.location.href = 'login.html';
+    async handleLogout() {
+        try {
+            // Sign out from Supabase
+            if (this.supabase) {
+                const { error } = await this.supabase.auth.signOut();
+                if (error) {
+                    console.error('❌ Logout error:', error);
+                }
+            }
+            
+            // Clear all auth-related data
+            localStorage.clear();
+            sessionStorage.clear();
+            this.currentUser = null;
+            
+            // Show logout message
+            this.showMessage('Logging out...', 'info');
+            
+            console.log('✅ User logged out');
+            
+            // Force reload and redirect to login page
+            window.location.href = 'login.html';
+        } catch (error) {
+            console.error('❌ Logout failed:', error);
+            // Still redirect even if logout fails
+            window.location.href = 'login.html';
+        }
     }
 
     setupLogoutButton() {
@@ -244,12 +293,17 @@ class AuthManager {
 
     // Utility method to check if user is authenticated
     isAuthenticated() {
-        return localStorage.getItem('isAuthenticated') === 'true';
+        return localStorage.getItem('isAuthenticated') === 'true' || this.currentUser !== null;
     }
 
     // Get current user
     getCurrentUser() {
         return this.currentUser;
+    }
+
+    // Get Supabase client for other modules
+    getSupabaseClient() {
+        return this.supabase;
     }
 }
 

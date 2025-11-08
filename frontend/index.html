@@ -131,24 +131,7 @@
             <!-- File Upload Section -->
             <div class="p-4 border-b border-gray-200">
                 <h3 class="text-sm font-medium text-gray-700 mb-3">Upload Overlays</h3>
-                <div class="space-y-3">
-                    <div>
-                        <label for="fileUpload" class="block text-xs text-gray-600 mb-1">KML/GeoJSON Files</label>
-                        <input type="file" id="fileUpload" accept=".kml,.geojson,.json" multiple
-                            class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-water-blue file:text-white hover:file:bg-water-cyan">
-                    </div>
-                    <div>
-                        <label for="urlInput" class="block text-xs text-gray-600 mb-1">External URL</label>
-                        <div class="flex">
-                            <input type="url" id="urlInput" placeholder="https://example.com/data.geojson"
-                                class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
-                            <button id="loadUrlBtn"
-                                class="px-3 py-2 bg-water-blue text-white text-sm rounded-r-lg hover:bg-water-cyan transition-colors">
-                                <i class="fas fa-download"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <input type="file" id="fileUpload" accept=".kml,.geojson,.json" multiple>
             </div>
 
             <!-- Data Filters -->
@@ -258,6 +241,91 @@
                 </button>
             </div>
 
+            <!-- Colorscale Legend Panel -->
+            <div id="colorscaleLegend" class="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30" style="width: 280px;">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-900">
+                        <i class="fas fa-palette mr-2"></i>Color Scale
+                    </h3>
+                    <button id="toggleColorscale" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-chevron-up"></i>
+                    </button>
+                </div>
+                
+                <div id="colorscaleContent">
+                    <!-- Parameter Selection -->
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Parameter</label>
+                        <select id="colorParameter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
+                            <option value="ph">pH Level</option>
+                            <option value="turbidity">Turbidity (NTU)</option>
+                            <option value="temperature">Temperature (°C)</option>
+                            <option value="tds">TDS (ppm)</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Color Gradient Display -->
+                    <div class="mb-3">
+                        <div class="relative">
+                            <div class="h-8 rounded-lg" id="colorGradient" style="background: linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444);"></div>
+                        </div>
+                        <div class="flex justify-between mt-1">
+                            <span class="text-xs text-gray-500" id="paramMinLabel">0</span>
+                            <span class="text-xs text-gray-500" id="paramMaxLabel">14</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Min Value Slider -->
+                    <div class="mb-3">
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="text-xs font-medium text-gray-700">
+                                Min Value: <span id="minValueDisplay" class="text-water-blue font-semibold">0</span>
+                            </label>
+                            <div class="flex gap-1">
+                                <button id="minDecrement" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded" title="Decrease by 0.5">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <button id="minIncrement" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded" title="Increase by 0.5">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <input type="range" id="minSlider" min="0" max="100" value="0" step="0.1"
+                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider">
+                    </div>
+                    
+                    <!-- Max Value Slider -->
+                    <div class="mb-3">
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="text-xs font-medium text-gray-700">
+                                Max Value: <span id="maxValueDisplay" class="text-water-blue font-semibold">100</span>
+                            </label>
+                            <div class="flex gap-1">
+                                <button id="maxDecrement" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded" title="Decrease by 0.5">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <button id="maxIncrement" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded" title="Increase by 0.5">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <input type="range" id="maxSlider" min="0" max="100" value="100" step="0.1"
+                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider">
+                    </div>
+                    
+                    <!-- Apply Button -->
+                    <button id="applyColorscale" class="w-full px-3 py-2 bg-water-blue text-white text-sm font-medium rounded-lg hover:bg-water-cyan transition-colors">
+                        <i class="fas fa-check mr-2"></i>Apply Color Scale
+                    </button>
+                    
+                    <!-- Auto-scale Option -->
+                    <label class="flex items-center mt-3 text-xs text-gray-600 cursor-pointer">
+                        <input type="checkbox" id="autoScale" class="mr-2 rounded border-gray-300 text-water-blue focus:ring-water-blue">
+                        Auto-adjust to data range
+                    </label>
+                </div>
+            </div>
+
             <!-- Zoom Level Indicator -->
             <div class="absolute bottom-4 right-4 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs z-20">
                 Zoom: <span id="zoomLevel">4</span>
@@ -314,6 +382,7 @@
     <script src="env-config.js"></script>
     <script src="config.js"></script>
     <script src="overlays-config.js"></script>
+    <script src="colorscale.js"></script>
     <script src="auth.js"></script>
     <script src="data.js"></script>
     <script src="map.js"></script>

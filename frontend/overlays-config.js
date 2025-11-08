@@ -12,14 +12,15 @@ const OVERLAY_CONFIG = {
     // List of overlay files to load automatically
     overlays: [
         // ═══════════════════════════════════════════════════════
-        // METHOD 2: Supabase Storage (Production - Currently Active)
+        // PRODUCTION: Load from Supabase Storage (Backend)
+        // All KML files uploaded to Supabase Storage bucket
         // ═══════════════════════════════════════════════════════
         {
             name: 'Nallampatti Cluster',
             source: 'supabase',  // Loads from Supabase Storage (cloud)
             file: 'nallampatti_cluster.kml',
             enabled: true,
-            description: '5 villages in Salem district'
+            description: '5 villages with colored boundaries + markers'
         },
 
         // ═══════════════════════════════════════════════════════

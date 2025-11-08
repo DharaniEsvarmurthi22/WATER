@@ -593,3 +593,118 @@ body.location-page {
     background: #f3f4f6 !important;
     color: #111827 !important;
 }
+
+/* ============================================
+   COLORSCALE ALERT ANIMATION
+   ============================================ */
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+#colorscaleAlert {
+    animation: slideIn 0.3s ease-out, pulse 2s infinite;
+}
+
+/* ============================================
+   COLORSCALE LEGEND STYLES
+   ============================================ */
+#colorscaleLegend {
+    max-height: 90vh;
+    overflow-y: auto;
+    transition: all 0.3s ease;
+}
+
+#colorscaleLegend.collapsed #colorscaleContent {
+    display: none;
+}
+
+#colorscaleLegend.collapsed {
+    padding-bottom: 0.75rem;
+}
+
+/* Custom Range Slider Styles */
+.slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, #e5e7eb, #e5e7eb);
+    outline: none;
+    opacity: 0.9;
+    transition: opacity 0.2s;
+}
+
+.slider:hover {
+    opacity: 1;
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #0ea5e9;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: all 0.2s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+    background: #06b6d4;
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+}
+
+.slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #0ea5e9;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: all 0.2s ease;
+}
+
+.slider::-moz-range-thumb:hover {
+    background: #06b6d4;
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+}
+
+/* Color gradient bar */
+#colorGradient {
+    border: 1px solid #e5e7eb;
+    position: relative;
+}
+
+#colorGradient::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(to right, 
+        rgba(255,255,255,0.1), 
+        rgba(255,255,255,0)
+    );
+    pointer-events: none;
+}

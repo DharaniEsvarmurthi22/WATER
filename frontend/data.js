@@ -3,6 +3,14 @@
 // Supabase client
 let supabase = null;
 
+// Getter function for Supabase client (for use in other modules)
+function getSupabaseClient() {
+    return supabase;
+}
+
+// Expose globally for map.js to use
+window.getSupabaseClient = getSupabaseClient;
+
 // Sample sensor data structure
 const sensorData = {
     sensors: new Map(),

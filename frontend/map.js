@@ -6,6 +6,7 @@ class MapManager {
         this.markers = [];
         this.kmlLayers = [];
         this.heatmapLayer = null;
+        this.colorscaleManager = null;  // Will be initialized after map loads
         this.overlayConfig = window.OVERLAY_CONFIG || { autoLoad: false, overlays: [] };
         this.layersVisible = {
             sensors: true,
@@ -33,6 +34,13 @@ class MapManager {
             this.setupEventListeners();
             this.addVillageMarkers();
             await this.loadDefaultKMLOverlays(); // Load KML automatically
+            
+            // Initialize colorscale manager after map is ready
+            if (window.ColorscaleManager) {
+                this.colorscaleManager = new window.ColorscaleManager(this);
+                console.log('✅ Colorscale manager initialized');
+            }
+            
             this.restoreMapState();
             this.hideLoadingOverlay();
         } catch (error) {
@@ -89,9 +97,13 @@ class MapManager {
                         fileUrl = overlay.file;
                 }
                 
+                console.log(`🔍 Attempting to load from: ${fileUrl}`);
                 const response = await fetch(fileUrl);
+                console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+                
                 if (response.ok) {
                     const text = await response.text();
+                    console.log(`📄 File size: ${text.length} bytes`);
                     
                     // Determine file type and load
                     if (overlay.file.endsWith('.kml')) {
@@ -248,7 +260,7 @@ class MapManager {
                         } else if (file.name.endsWith('.geojson') || file.name.endsWith('.json')) {
                             await this.loadGeoJSON(JSON.parse(text), file.name);
                         }
-                        this.showSuccess(`${file.name} loaded successfully`);
+                        this.showSuccess(`${file.name} loaded`);
                     } catch (error) {
                         this.showError(`Failed to load ${file.name}`);
                     }
@@ -393,6 +405,12 @@ class MapManager {
     switchToSatellite() {
         if (this.currentStyle === 'satellite') return;
         
+        console.log('🛰️ Switching to satellite view...');
+        
+        // Store current map state
+        const currentCenter = this.map.getCenter();
+        const currentZoom = this.map.getZoom();
+        
         this.map.setStyle({
             version: 8,
             sources: {
@@ -406,10 +424,20 @@ class MapManager {
         });
         
         this.currentStyle = 'satellite';
-        this.map.once('styledata', () => {
+        
+        // Use setTimeout to ensure style change completes first
+        setTimeout(async () => {
+            console.log('🎨 Reloading layers for satellite view...');
+            
+            // Restore map position
+            this.map.jumpTo({ center: currentCenter, zoom: currentZoom });
+            
+            // Reload markers and KML
             this.addVillageMarkers();
-            this.reloadKMLLayers();
-        });
+            await this.reloadKMLLayers();
+            
+            console.log('✅ Satellite view complete');
+        }, 500); // Small delay to let style fully initialize
         
         // Update button styles
         document.getElementById('satelliteViewBtn')?.classList.add('bg-white', 'text-water-blue', 'shadow-sm');
@@ -420,6 +448,12 @@ class MapManager {
 
     switchToStreet() {
         if (this.currentStyle === 'street') return;
+        
+        console.log('🗺️ Switching to street view...');
+        
+        // Store current map state
+        const currentCenter = this.map.getCenter();
+        const currentZoom = this.map.getZoom();
         
         this.map.setStyle({
             version: 8,
@@ -434,10 +468,20 @@ class MapManager {
         });
         
         this.currentStyle = 'street';
-        this.map.once('styledata', () => {
+        
+        // Use setTimeout to ensure style change completes first
+        setTimeout(async () => {
+            console.log('🎨 Reloading layers for street view...');
+            
+            // Restore map position
+            this.map.jumpTo({ center: currentCenter, zoom: currentZoom });
+            
+            // Reload markers and KML
             this.addVillageMarkers();
-            this.reloadKMLLayers();
-        });
+            await this.reloadKMLLayers();
+            
+            console.log('✅ Street view complete');
+        }, 500); // Small delay to let style fully initialize
         
         // Update button styles
         document.getElementById('streetViewBtn')?.classList.add('bg-white', 'text-water-blue', 'shadow-sm');
@@ -450,7 +494,7 @@ class MapManager {
         this.markers.forEach(m => m.remove());
         this.markers = [];
         
-        // Use sensorData.locations if available (dynamic from database)
+        // Only use sensorData.locations from database
         const locations = window.sensorData?.locations || [];
         
         if (locations.length > 0) {
@@ -459,17 +503,8 @@ class MapManager {
                 this.addMarkerForLocation(location);
             });
         } else {
-            // Fallback to hardcoded villages if no data loaded yet
-            console.log('📍 Using fallback hardcoded villages');
-            Object.entries(this.villages).forEach(([city, villages]) => {
-                villages.forEach(v => {
-                    this.addMarkerForLocation({
-                        id: v.id,
-                        name: v.name,
-                        coordinates: v.coords
-                    });
-                });
-            });
+            console.log('⚠️ No locations loaded from database yet');
+            // Don't show fallback markers - wait for database to load
         }
     }
     
@@ -480,10 +515,15 @@ class MapManager {
             return;
         }
         
+        const locationId = location.location_id || location.id;
+        
         const el = document.createElement('div');
         el.className = 'village-marker';
-        el.innerHTML = '<div style="background:blue;width:20px;height:20px;border-radius:50%;border:2px solid white;"></div>';
+        el.dataset.locationId = locationId; // Add location ID for colorscale
+        el.innerHTML = `<div class="marker" data-location="${locationId}" style="background:#3b82f6;width:20px;height:20px;border-radius:50%;border:2px solid #1e40af;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`;
         el.style.cursor = 'pointer';
+        
+        console.log(`🎯 Creating marker for location: ${locationId}`);
         
         const marker = new maplibregl.Marker({ element: el })
             .setLngLat(coords)
@@ -491,14 +531,14 @@ class MapManager {
         
         el.addEventListener('click', () => {
             this.saveMapState();
-            window.location.href = `location.html?location=${location.id}`;
+            window.location.href = `location.html?location=${locationId}`;
         });
         
         const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
             <div style="padding:8px;">
                 <h3 style="font-weight:bold;margin-bottom:4px;">${location.name}</h3>
                 <p style="color:#666;font-size:12px;">Water quality monitoring</p>
-                <button onclick="window.mapManager.saveMapState(); window.location.href='location.html?location=${location.id}'" 
+                <button onclick="window.mapManager.saveMapState(); window.location.href='location.html?location=${locationId}'" 
                         style="margin-top:8px;padding:4px 12px;background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;">
                     View Dashboard
                 </button>
@@ -508,31 +548,86 @@ class MapManager {
         marker.setPopup(popup);
         this.markers.push(marker);
     }
+    
+    // Public method to update marker color by location ID
+    updateMarkerColor(locationId, color) {
+        const marker = this.markers.find(m => m._element.dataset.locationId === locationId);
+        if (marker) {
+            const markerEl = marker._element.querySelector('.marker');
+            if (markerEl) {
+                markerEl.style.backgroundColor = color;
+                markerEl.style.borderColor = this.darkenColor(color);
+                console.log(`✅ Updated marker ${locationId} to ${color}`);
+                return true;
+            }
+        }
+        console.warn(`⚠️ Marker not found for ${locationId}`);
+        return false;
+    }
+    
+    darkenColor(hex) {
+        // Convert hex to RGB
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        
+        // Darken by 30%
+        const darken = (val) => Math.max(0, Math.floor(val * 0.7));
+        
+        return `rgb(${darken(r)}, ${darken(g)}, ${darken(b)})`;
+    }
 
     async loadKML(kmlText, fileName) {
+        console.log(`🔄 Converting KML to GeoJSON: ${fileName}`);
         const parser = new DOMParser();
         const kml = parser.parseFromString(kmlText, 'text/xml');
+        
+        // Check for parsing errors
+        const parserError = kml.querySelector('parsererror');
+        if (parserError) {
+            console.error('❌ KML parsing error:', parserError.textContent);
+            return;
+        }
+        
         const geojson = toGeoJSON.kml(kml);
-        await this.loadGeoJSON(geojson, fileName);
+        console.log(`📊 GeoJSON features found: ${geojson.features?.length || 0}`);
+        console.log('📍 GeoJSON data:', JSON.stringify(geojson, null, 2));
+        
+        if (geojson.features && geojson.features.length > 0) {
+            await this.loadGeoJSON(geojson, fileName);
+        } else {
+            console.error('❌ No features found in KML file');
+        }
     }
 
     async loadGeoJSON(geojson, fileName) {
+        console.log(`📥 Loading GeoJSON: ${fileName}`);
         const layerId = `layer-${Date.now()}`;
         const sourceId = `source-${Date.now()}`;
-        
-        if (!this.map.isStyleLoaded()) {
-            await new Promise(resolve => this.map.once('styledata', resolve));
-        }
         
         // Separate features by geometry type
         const points = geojson.features.filter(f => f.geometry.type === 'Point');
         const lines = geojson.features.filter(f => f.geometry.type === 'LineString' || f.geometry.type === 'MultiLineString');
         const polygons = geojson.features.filter(f => f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon');
         
-        // Add Point features (villages/markers)
+        console.log(`📊 Feature breakdown: ${points.length} points, ${lines.length} lines, ${polygons.length} polygons`);
+        
+        // Add Point features (villages/markers) with matching colors
         if (points.length > 0) {
+            try {
             const pointSourceId = `${sourceId}-points`;
             const pointLayerId = `${layerId}-points`;
+            
+            // Assign same colors as polygons
+            const villageColors = [
+                '#22c55e', '#f97316', '#3b82f6', '#a855f7', '#eab308',
+                '#ef4444', '#06b6d4', '#ec4899', '#84cc16', '#f59e0b'
+            ];
+            
+            points.forEach((feature, index) => {
+                feature.properties.markerColor = villageColors[index % villageColors.length];
+            });
+            
             this.map.addSource(pointSourceId, { 
                 type: 'geojson', 
                 data: { ...geojson, features: points } 
@@ -542,30 +637,34 @@ class MapManager {
                 type: 'circle',
                 source: pointSourceId,
                 paint: { 
-                    'circle-radius': 8, 
-                    'circle-color': '#ef4444',
-                    'circle-stroke-width': 2,
-                    'circle-stroke-color': '#ffffff'
+                    'circle-radius': 10, 
+                    'circle-color': ['get', 'markerColor'], // Match polygon color
+                    'circle-stroke-width': 3,
+                    'circle-stroke-color': '#ffffff',
+                    'circle-opacity': 0.9
                 }
             });
             
-            // Add click handler for KML points - opens location dashboard
-            this.map.on('click', pointLayerId, (e) => {
+            // Add click handler for KML points - show popup (same as polygons)
+            this.map.on('click', pointLayerId, async (e) => {
+                console.log(`🖱️ Point marker clicked! Layer: ${pointLayerId}`);
                 if (e.features && e.features.length > 0) {
                     const feature = e.features[0];
+                    console.log(`📍 Feature properties:`, feature.properties);
                     const name = feature.properties.name || feature.properties.Name;
                     
                     if (name) {
                         // Convert name to location_id format (lowercase, no spaces)
                         const locationId = name.toLowerCase().replace(/\s+/g, '');
-                        console.log(`🎯 KML point clicked: "${name}" → Opening location.html?location=${locationId}`);
+                        console.log(`🎯 KML point clicked: "${name}" → location_id: ${locationId}`);
                         
-                        // Save map state before navigating
-                        this.saveMapState();
-                        
-                        // Open location dashboard
-                        window.location.href = `location.html?location=${locationId}`;
+                        // Show dynamic popup with current sensor data
+                        await this.showDynamicPopup(e.lngLat, locationId, feature.properties);
+                    } else {
+                        console.warn('⚠️ No name property found in point feature');
                     }
+                } else {
+                    console.warn('⚠️ No features found in point click event');
                 }
             });
             
@@ -579,10 +678,15 @@ class MapManager {
             });
             
             this.kmlLayers.push({ layerId: pointLayerId, sourceId: pointSourceId, fileName });
+            
+            } catch (error) {
+                console.error(`❌ Error adding point layers:`, error.message);
+            }
         }
         
         // Add LineString features (roads/boundaries)
         if (lines.length > 0) {
+            try {
             const lineSourceId = `${sourceId}-lines`;
             const lineLayerId = `${layerId}-lines`;
             this.map.addSource(lineSourceId, { 
@@ -600,30 +704,65 @@ class MapManager {
                 }
             });
             this.kmlLayers.push({ layerId: lineLayerId, sourceId: lineSourceId, fileName });
+            
+            } catch (error) {
+                console.error(`❌ Error adding line layers:`, error.message);
+            }
         }
         
-        // Add Polygon features (areas/boundaries)
+        // Add Polygon features (areas/boundaries) with unique colors
         if (polygons.length > 0) {
-            const polySourceId = `${sourceId}-polygons`;
-            const polyLayerId = `${layerId}-polygons`;
-            this.map.addSource(polySourceId, { 
-                type: 'geojson', 
-                data: { ...geojson, features: polygons } 
-            });
-            this.map.addLayer({
-                id: polyLayerId,
-                type: 'fill',
-                source: polySourceId,
-                paint: { 
-                    'fill-color': '#22c55e', 
-                    'fill-opacity': 0.2 
-                }
-            });
+            try {
+                const polySourceId = `${sourceId}-polygons`;
+                const polyLayerId = `${layerId}-polygons`;
+                
+                console.log(`🟢 Adding polygon layer: ${polyLayerId}`);
+                
+                // Define village colors (matching Andhra Pradesh district map style)
+                const villageColors = [
+                    '#22c55e', // Green (Nallampatti)
+                    '#f97316', // Orange (Poolampatti)
+                    '#3b82f6', // Blue (Thumbalpatti)
+                    '#a855f7', // Purple (Karipatti)
+                    '#eab308', // Yellow (Mallamooppampatti)
+                    '#ef4444', // Red
+                    '#06b6d4', // Cyan
+                    '#ec4899', // Pink
+                    '#84cc16', // Lime
+                    '#f59e0b'  // Amber
+                ];
+                
+                // Assign colors to each polygon feature
+                polygons.forEach((feature, index) => {
+                    feature.properties.fillColor = villageColors[index % villageColors.length];
+                });
+                
+                this.map.addSource(polySourceId, { 
+                    type: 'geojson', 
+                    data: { ...geojson, features: polygons } 
+                });
+                
+                console.log(`✅ Polygon source added: ${polySourceId}`);
+                
+                // Add polygon fill layer with data-driven styling
+                this.map.addLayer({
+                    id: polyLayerId,
+                    type: 'fill',
+                    source: polySourceId,
+                    paint: { 
+                        'fill-color': ['get', 'fillColor'], // Use color from feature properties
+                        'fill-opacity': 0.25 // Semi-transparent like district map
+                    }
+                });
+                
+                console.log(`✅ Polygon fill layer added: ${polyLayerId}`);
             
             // Add click handler for KML polygons - show dynamic popup
             this.map.on('click', polyLayerId, async (e) => {
+                console.log(`🖱️ Polygon clicked! Layer: ${polyLayerId}`);
                 if (e.features && e.features.length > 0) {
                     const feature = e.features[0];
+                    console.log(`📍 Feature properties:`, feature.properties);
                     const name = feature.properties.name || feature.properties.Name;
                     
                     if (name) {
@@ -633,7 +772,11 @@ class MapManager {
                         
                         // Show dynamic popup with current sensor data
                         await this.showDynamicPopup(e.lngLat, locationId, feature.properties);
+                    } else {
+                        console.warn('⚠️ No name property found in feature');
                     }
+                } else {
+                    console.warn('⚠️ No features found in click event');
                 }
             });
             
@@ -646,17 +789,28 @@ class MapManager {
                 this.map.getCanvas().style.cursor = '';
             });
             
-            // Add polygon outline
+            // Add polygon outline with same color as fill
             this.map.addLayer({
                 id: `${polyLayerId}-outline`,
                 type: 'line',
                 source: polySourceId,
                 paint: { 
-                    'line-color': '#22c55e', 
-                    'line-width': 2 
+                    'line-color': ['get', 'fillColor'], // Match fill color
+                    'line-width': 3,
+                    'line-opacity': 0.8
                 }
             });
+            
+            console.log(`✅ Polygon outline layer added: ${polyLayerId}-outline`);
+            
             this.kmlLayers.push({ layerId: polyLayerId, sourceId: polySourceId, fileName });
+            
+            console.log(`✅ Polygon layers successfully added for: ${fileName}`);
+            
+            } catch (error) {
+                console.error(`❌ Error adding polygon layers:`, error);
+                console.error(`   Error details:`, error.message);
+            }
         }
     }
 
@@ -668,8 +822,32 @@ class MapManager {
         try {
             console.log(`📊 Building dynamic popup for: ${locationId}`);
 
+            // Get Supabase client
+            console.log(`🔍 Checking for getSupabaseClient...`, typeof window.getSupabaseClient);
+            const supabase = window.getSupabaseClient ? window.getSupabaseClient() : null;
+            console.log(`🔍 Supabase client:`, supabase);
+            
+            if (!supabase) {
+                console.error('❌ Supabase client not available');
+                console.error('   window.getSupabaseClient exists?', !!window.getSupabaseClient);
+                // Show basic popup without database data
+                new maplibregl.Popup()
+                    .setLngLat(lngLat)
+                    .setHTML(`
+                        <div style="padding:10px;">
+                            <h3>${locationId}</h3>
+                            <p>Database connection unavailable</p>
+                            <p style="font-size:10px;">Check console for details</p>
+                        </div>
+                    `)
+                    .addTo(this.map);
+                return;
+            }
+            
+            console.log(`✅ Supabase client retrieved successfully`);
+
             // Fetch popup configuration from database
-            const { data: popupConfig, error: configError } = await window.supabase
+            const { data: popupConfig, error: configError } = await supabase
                 .from('popup_config')
                 .select('*')
                 .eq('location_id', locationId)
@@ -680,7 +858,7 @@ class MapManager {
             }
 
             // Fetch location details
-            const { data: location, error: locationError } = await window.supabase
+            const { data: location, error: locationError } = await supabase
                 .from('locations')
                 .select('*')
                 .eq('location_id', locationId)
@@ -692,16 +870,29 @@ class MapManager {
             }
 
             // Fetch latest sensor readings
-            const sensorsToShow = popupConfig?.show_sensors || ['ph', 'turbidity', 'temperature', 'tds'];
+            let sensorsToShow = popupConfig?.show_sensors;
+            
+            // Handle if show_sensors is boolean instead of array
+            if (typeof sensorsToShow === 'boolean') {
+                sensorsToShow = sensorsToShow ? ['ph', 'turbidity', 'temperature', 'tds'] : [];
+            } else if (!Array.isArray(sensorsToShow)) {
+                sensorsToShow = ['ph', 'turbidity', 'temperature', 'tds'];
+            }
+            
             const sensorPromises = sensorsToShow.map(async (sensorType) => {
                 const sensorId = `${locationId}_${sensorType}`;
-                const { data, error } = await window.supabase
+                console.log(`📡 Fetching sensor: ${sensorId}`);
+                const { data, error } = await supabase
                     .from('sensor_readings')
                     .select('value, timestamp')
                     .eq('sensor_id', sensorId)
                     .order('timestamp', { ascending: false })
                     .limit(1)
                     .single();
+
+                if (error && error.code !== 'PGRST116') {
+                    console.warn(`⚠️ Error fetching ${sensorId}:`, error);
+                }
 
                 return {
                     type: sensorType,
@@ -730,17 +921,6 @@ class MapManager {
                 .setLngLat(lngLat)
                 .setHTML(popupHTML)
                 .addTo(this.map);
-
-            // Add event listener for "View Dashboard" button after popup is added to DOM
-            setTimeout(() => {
-                const viewButton = document.getElementById('view-dashboard-btn');
-                if (viewButton) {
-                    viewButton.addEventListener('click', () => {
-                        this.saveMapState();
-                        window.location.href = `location.html?location=${locationId}`;
-                    });
-                }
-            }, 100);
 
         } catch (error) {
             console.error('❌ Error showing dynamic popup:', error);
@@ -838,7 +1018,10 @@ class MapManager {
         let viewButtonHTML = '';
         if (showViewButton) {
             viewButtonHTML = `
-                <button id="view-dashboard-btn" class="popup-view-button">
+                <button 
+                    class="popup-view-button"
+                    onmousedown="event.preventDefault(); event.stopPropagation(); window.location.href='location.html?location=${location.location_id}';"
+                >
                     🔍 View Full Dashboard
                 </button>
             `;
@@ -872,8 +1055,17 @@ class MapManager {
         return `${Math.floor(seconds / 86400)} days ago`;
     }
 
-    reloadKMLLayers() {
-        // Layers will be reloaded after style change
+    async reloadKMLLayers() {
+        // Reload all KML overlays after map style change (street ↔ satellite)
+        console.log('🔄 Reloading KML layers after style change...');
+        
+        // Clear the layer tracking array (sources/layers are removed with style change)
+        this.kmlLayers = [];
+        
+        // Reload all configured overlays
+        await this.loadDefaultKMLOverlays();
+        
+        console.log('✅ KML layers reloaded successfully');
     }
 
     showError(msg) {
