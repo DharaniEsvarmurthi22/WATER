@@ -22,6 +22,13 @@ const OVERLAY_CONFIG = {
             enabled: true,
             description: '5 villages with colored boundaries + markers'
         },
+        {
+            name: 'Salem Taluks',
+            source: 'supabase',  // Loads from Supabase Storage (cloud)
+            file: 'salem_taluks.kml',
+            enabled: true,
+            description: 'Mettur, Omalur, Edappadi, Sankari, Yercaud taluks'
+        },
 
         // ═══════════════════════════════════════════════════════
         // METHOD 2: Supabase Storage (Recommended for Production!)

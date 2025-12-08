@@ -7,9 +7,9 @@
     <title>Water Dashboard - Real-time Monitoring</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
     <script src="https://unpkg.com/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
     <script>
@@ -34,13 +34,13 @@
             <div class="flex justify-between items-center h-16">
                 <!-- Logo and Title -->
                 <div class="flex items-center space-x-3">
-                    <div
-                        class="w-10 h-10 bg-gradient-to-r from-water-blue to-water-cyan rounded-lg flex items-center justify-center">
-                        <i class="fas fa-tint text-white text-lg"></i>
+                    <div class="flex items-center justify-center">
+                        <img src="eyenetaqua-logo.jpg" alt="EyeNetAqua"
+                            style="height: 40px; width: auto; max-width: 150px; object-fit: contain;">
                     </div>
                     <div>
-                        <h1 class="text-xl font-bold text-gray-900">Water Dashboard</h1>
-                        <p class="text-xs text-gray-500">Real-time Monitoring</p>
+                        <h1 class="text-xl font-bold text-gray-900">JalSuraksha Insight Grid</h1>
+                        <p class="text-xs text-gray-500">Powered by EyeNetAqua's Water Surveillance Matrix</p>
                     </div>
                 </div>
 
@@ -79,8 +79,8 @@
                 </div>
             </div>
 
-            <!-- Locations List -->
-            <div class="location-list" id="locationsList">
+            <!-- Locations List (Hidden) -->
+            <div class="location-list hidden" id="locationsList">
                 <!-- Location items will be dynamically added here -->
             </div>
 
@@ -111,17 +111,12 @@
                             <label class="flex items-center">
                                 <input type="checkbox" id="sensorsLayer" checked
                                     class="rounded border-gray-300 text-water-blue focus:ring-water-blue">
-                                <span class="ml-2 text-sm text-gray-700">Sensor Locations</span>
+                                <span class="ml-2 text-sm text-gray-700">Village Markers</span>
                             </label>
                             <label class="flex items-center">
-                                <input type="checkbox" id="heatmapLayer"
+                                <input type="checkbox" id="overlaysLayer" checked
                                     class="rounded border-gray-300 text-water-blue focus:ring-water-blue">
-                                <span class="ml-2 text-sm text-gray-700">Data Heatmap</span>
-                            </label>
-                            <label class="flex items-center">
-                                <input type="checkbox" id="overlaysLayer"
-                                    class="rounded border-gray-300 text-water-blue focus:ring-water-blue">
-                                <span class="ml-2 text-sm text-gray-700">Custom Overlays</span>
+                                <span class="ml-2 text-sm text-gray-700">KML Overlays</span>
                             </label>
                         </div>
                     </div>
@@ -131,41 +126,22 @@
             <!-- File Upload Section -->
             <div class="p-4 border-b border-gray-200">
                 <h3 class="text-sm font-medium text-gray-700 mb-3">Upload Overlays</h3>
-                <input type="file" id="fileUpload" accept=".kml,.geojson,.json" multiple>
-            </div>
-
-            <!-- Data Filters -->
-            <div class="p-4 border-b border-gray-200">
-                <h3 class="text-sm font-medium text-gray-700 mb-3">Data Filters</h3>
-                <div class="space-y-3">
-                    <div>
-                        <label class="block text-xs text-gray-600 mb-1">Value Range</label>
-                        <div class="flex space-x-2">
-                            <input type="number" id="minValue" placeholder="Min"
-                                class="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
-                            <input type="number" id="maxValue" placeholder="Max"
-                                class="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-gray-600 mb-1">Time Range</label>
-                        <select id="timeRange"
-                            class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
-                            <option value="1h">Last Hour</option>
-                            <option value="6h">Last 6 Hours</option>
-                            <option value="24h" selected>Last 24 Hours</option>
-                            <option value="7d">Last 7 Days</option>
-                            <option value="30d">Last 30 Days</option>
-                        </select>
-                    </div>
+                <label for="fileUpload"
+                    class="w-full px-3 py-2 bg-water-blue text-white text-sm rounded-lg hover:bg-water-cyan transition-colors cursor-pointer flex items-center justify-center">
+                    <i class="fas fa-upload mr-2"></i>Choose Files
+                </label>
+                <input type="file" id="fileUpload" accept=".kml,.geojson,.json" multiple class="hidden">
+                <div id="uploadedFilesList" class="mt-3 space-y-2">
+                    <!-- Uploaded files will appear here -->
                 </div>
             </div>
 
             <!-- Statistics Panel -->
             <div class="flex-1 p-4 overflow-y-auto">
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-sm font-medium text-gray-700">Live Statistics</h3>
-                    <select id="statsLocationFilter" class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
+                    <h3 class="text-sm font-medium text-gray-700">Live Status</h3>
+                    <select id="statsLocationFilter"
+                        class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
                         <option value="all">All Locations</option>
                         <option value="ukkadam">Ukkadam</option>
                         <option value="singanallur">Singanallur</option>
@@ -179,22 +155,21 @@
 
                 <!-- Recent Readings -->
                 <div class="mt-6">
-                    <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center justify-between mb-3">
                         <h4 class="text-sm font-medium text-gray-700">Recent Readings</h4>
-                        <div class="flex gap-1">
-                            <button id="filterAllBtn" class="filter-btn active px-2 py-1 text-xs rounded bg-water-blue text-white">All</button>
-                        </div>
                     </div>
                     <!-- Filter dropdowns -->
                     <div class="flex gap-2 mb-2">
-                        <select id="locationFilter" class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
+                        <select id="locationFilter"
+                            class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
                             <option value="all">All Locations</option>
                             <option value="ukkadam">Ukkadam</option>
                             <option value="singanallur">Singanallur</option>
                             <option value="redhills">Red Hills</option>
                             <option value="porur">Porur</option>
                         </select>
-                        <select id="sensorFilter" class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
+                        <select id="sensorFilter"
+                            class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
                             <option value="all">All Sensors</option>
                             <option value="ph">pH</option>
                             <option value="turbidity">Turbidity</option>
@@ -216,7 +191,8 @@
             <!-- Map Loading Overlay -->
             <div id="mapLoading" class="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-30">
                 <div class="text-center p-4 rounded-lg shadow-lg bg-white">
-                    <div class="w-12 h-12 border-4 border-water-blue border-t-transparent rounded-full animate-spin mx-auto mb-4">
+                    <div
+                        class="w-12 h-12 border-4 border-water-blue border-t-transparent rounded-full animate-spin mx-auto mb-4">
                     </div>
                     <p class="text-gray-600">Loading map...</p>
                 </div>
@@ -242,39 +218,81 @@
             </div>
 
             <!-- Colorscale Legend Panel -->
-            <div id="colorscaleLegend" class="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30" style="width: 280px;">
+            <div id="colorscaleLegend" class="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30 collapsed"
+                style="width: 280px;">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-sm font-semibold text-gray-900">
                         <i class="fas fa-palette mr-2"></i>Color Scale
                     </h3>
                     <button id="toggleColorscale" class="text-gray-500 hover:text-gray-700">
-                        <i class="fas fa-chevron-up"></i>
+                        <i class="fas fa-chevron-down"></i>
                     </button>
                 </div>
-                
+
                 <div id="colorscaleContent">
                     <!-- Parameter Selection -->
                     <div class="mb-3">
                         <label class="block text-xs font-medium text-gray-700 mb-1">Parameter</label>
-                        <select id="colorParameter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
+                        <select id="colorParameter"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
                             <option value="ph">pH Level</option>
                             <option value="turbidity">Turbidity (NTU)</option>
                             <option value="temperature">Temperature (°C)</option>
                             <option value="tds">TDS (ppm)</option>
                         </select>
                     </div>
-                    
+
+                    <!-- Color Theme Selection -->
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Color Theme</label>
+                        <select id="colorTheme"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
+                            <option value="custom">Parameter Palette (default)</option>
+                            <option value="hsv">HSV</option>
+                            <option value="hot">Hot</option>
+                            <option value="cool">Cool</option>
+                            <option value="jet">Jet</option>
+                            <option value="gray">Gray</option>
+                            <option value="bone">Bone</option>
+                            <option value="copper">Copper</option>
+                            <option value="pink">Pink</option>
+                            <option value="spring">Spring</option>
+                            <option value="summer">Summer</option>
+                            <option value="autumn">Autumn</option>
+                            <option value="winter">Winter</option>
+                            <option value="colorcube">Colorcube</option>
+                        </select>
+                    </div>
+
+                    <!-- Time Interval for Average Calculation -->
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Time Interval (for Average)</label>
+                        <select id="colorTimeInterval"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
+                            <option value="1h">Last Hour</option>
+                            <option value="6h">Last 6 Hours</option>
+                            <option value="24h" selected>Last 24 Hours</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="30d">Last 30 Days</option>
+                            <option value="3m">Last 3 Months</option>
+                            <option value="6m">Last 6 Months</option>
+                            <option value="1y">Last 1 Year</option>
+                        </select>
+                    </div>
+
                     <!-- Color Gradient Display -->
                     <div class="mb-3">
                         <div class="relative">
-                            <div class="h-8 rounded-lg" id="colorGradient" style="background: linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444);"></div>
+                            <div class="h-8 rounded-lg" id="colorGradient"
+                                style="background: linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444);">
+                            </div>
                         </div>
                         <div class="flex justify-between mt-1">
                             <span class="text-xs text-gray-500" id="paramMinLabel">0</span>
                             <span class="text-xs text-gray-500" id="paramMaxLabel">14</span>
                         </div>
                     </div>
-                    
+
                     <!-- Min Value Slider -->
                     <div class="mb-3">
                         <div class="flex items-center justify-between mb-1">
@@ -282,10 +300,14 @@
                                 Min Value: <span id="minValueDisplay" class="text-water-blue font-semibold">0</span>
                             </label>
                             <div class="flex gap-1">
-                                <button id="minDecrement" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded" title="Decrease by 0.5">
+                                <button id="minDecrement"
+                                    class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                                    title="Decrease by 0.5">
                                     <i class="fas fa-minus"></i>
                                 </button>
-                                <button id="minIncrement" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded" title="Increase by 0.5">
+                                <button id="minIncrement"
+                                    class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                                    title="Increase by 0.5">
                                     <i class="fas fa-plus"></i>
                                 </button>
                             </div>
@@ -293,7 +315,7 @@
                         <input type="range" id="minSlider" min="0" max="100" value="0" step="0.1"
                             class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider">
                     </div>
-                    
+
                     <!-- Max Value Slider -->
                     <div class="mb-3">
                         <div class="flex items-center justify-between mb-1">
@@ -301,10 +323,14 @@
                                 Max Value: <span id="maxValueDisplay" class="text-water-blue font-semibold">100</span>
                             </label>
                             <div class="flex gap-1">
-                                <button id="maxDecrement" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded" title="Decrease by 0.5">
+                                <button id="maxDecrement"
+                                    class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                                    title="Decrease by 0.5">
                                     <i class="fas fa-minus"></i>
                                 </button>
-                                <button id="maxIncrement" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded" title="Increase by 0.5">
+                                <button id="maxIncrement"
+                                    class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                                    title="Increase by 0.5">
                                     <i class="fas fa-plus"></i>
                                 </button>
                             </div>
@@ -312,15 +338,17 @@
                         <input type="range" id="maxSlider" min="0" max="100" value="100" step="0.1"
                             class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider">
                     </div>
-                    
+
                     <!-- Apply Button -->
-                    <button id="applyColorscale" class="w-full px-3 py-2 bg-water-blue text-white text-sm font-medium rounded-lg hover:bg-water-cyan transition-colors">
+                    <button id="applyColorscale"
+                        class="w-full px-3 py-2 bg-water-blue text-white text-sm font-medium rounded-lg hover:bg-water-cyan transition-colors">
                         <i class="fas fa-check mr-2"></i>Apply Color Scale
                     </button>
-                    
+
                     <!-- Auto-scale Option -->
                     <label class="flex items-center mt-3 text-xs text-gray-600 cursor-pointer">
-                        <input type="checkbox" id="autoScale" class="mr-2 rounded border-gray-300 text-water-blue focus:ring-water-blue">
+                        <input type="checkbox" id="autoScale"
+                            class="mr-2 rounded border-gray-300 text-water-blue focus:ring-water-blue">
                         Auto-adjust to data range
                     </label>
                 </div>
@@ -332,14 +360,17 @@
             </div>
 
             <!-- Map Error Message -->
-            <div id="mapError" class="hidden absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-30">
+            <div id="mapError"
+                class="hidden absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-30">
                 <div class="text-center p-6 rounded-lg shadow-lg bg-white max-w-md">
                     <div class="text-red-500 mb-4">
                         <i class="fas fa-exclamation-circle text-4xl"></i>
                     </div>
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Map Loading Error</h3>
-                    <p class="text-gray-600 mb-4" id="mapErrorMessage">Unable to load the map. Please check your connection and try again.</p>
-                    <button onclick="window.location.reload()" class="px-4 py-2 bg-water-blue text-white rounded-lg hover:bg-water-cyan transition-colors">
+                    <p class="text-gray-600 mb-4" id="mapErrorMessage">Unable to load the map. Please check your
+                        connection and try again.</p>
+                    <button onclick="window.location.reload()"
+                        class="px-4 py-2 bg-water-blue text-white rounded-lg hover:bg-water-cyan transition-colors">
                         <i class="fas fa-redo mr-2"></i>Reload Page
                     </button>
                 </div>

@@ -3,7 +3,7 @@ class AuthManager {
     constructor() {
         this.supabase = null;
         this.currentUser = null;
-        
+
         // Initialize Supabase
         this.initSupabase();
 
@@ -22,7 +22,7 @@ class AuthManager {
                     window.ENV.SUPABASE_ANON_KEY
                 );
                 console.log('✅ Supabase Auth initialized');
-                
+
                 // Get current session
                 const { data: { session } } = await this.supabase.auth.getSession();
                 if (session) {
@@ -191,17 +191,17 @@ class AuthManager {
                     console.error('❌ Logout error:', error);
                 }
             }
-            
+
             // Clear all auth-related data
             localStorage.clear();
             sessionStorage.clear();
             this.currentUser = null;
-            
+
             // Show logout message
             this.showMessage('Logging out...', 'info');
-            
+
             console.log('✅ User logged out');
-            
+
             // Force reload and redirect to login page
             window.location.href = 'login.html';
         } catch (error) {

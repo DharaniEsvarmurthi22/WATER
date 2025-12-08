@@ -33,21 +33,19 @@
 #define BAND  433E6  // 433 MHz
 
 // ============================================
-// 5 Villages Configuration (Nallampatti Cluster)
+// 5 Villages Configuration (Salem Taluks)
 // ============================================
 const char* villages[] = {
-  "kadambur",
-  "naduvalur",
-  "othiyathur",
-  "manjini",
-  "pungavadi"
+  "edappadi",
+  "mettur",
+  "omalur",
+  "sankari",
+  "salemsouth",
+  "yercaud"
 };
 
-const int numVillages = 5;
+const int numVillages = 6;
 int currentVillage = 0;
-
-// Sequential counter for sensor values
-float sensorValue = 10.1;  // Starting value
 
 // ============================================
 // Setup
@@ -58,7 +56,7 @@ void setup() {
 
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║   ESP32 LoRa Sender - Water Monitor   ║");
-  Serial.println("║        5 Villages Data Stream          ║");
+  Serial.println("║        6 Salem Taluks Data Stream      ║");
   Serial.println("╚════════════════════════════════════════╝\n");
 
   // Initialize LoRa
@@ -88,7 +86,7 @@ void setup() {
   Serial.println("Spreading Factor: 12 (Max Range)");
   Serial.println("Bandwidth:        62.5 kHz");
   Serial.println("TX Power:         20 dBm");
-  Serial.println("Villages:         5 (Nallampatti Cluster)");
+  Serial.println("Villages:         6 (Salem Taluks)");
   Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
   Serial.println("✅ System Ready - Starting transmission...\n");
 }
@@ -125,26 +123,33 @@ void loop() {
   // Move to next village
   currentVillage = (currentVillage + 1) % numVillages;
 
-  // Increment value only after completing all villages
-  if (currentVillage == 0) {
-    sensorValue += 1.0;
-  }
-
   // Wait 20 seconds before next transmission
   delay(20000);
 }
 
 // ============================================
-// Build LoRa Packet
+// Build LoRa Packet with Random Realistic Values
 // ============================================
 String buildPacket() {
   String packet = "LOC:" + String(villages[currentVillage]) + ",";
   
-  // All 4 sensors get the SAME value for this village
-  packet += "PH:" + String(sensorValue, 1) + ",";
-  packet += "TURB:" + String(sensorValue, 1) + ",";
-  packet += "TEMP:" + String(sensorValue, 1) + ",";
-  packet += "TDS:" + String(sensorValue, 1);
+  // Generate random values within realistic ranges
+  // pH: 6.1 - 9.2
+  float ph = random(610, 921) / 100.0;
+  
+  // Turbidity: 0 - 5 NTU
+  float turbidity = random(0, 501) / 100.0;
+  
+  // Temperature: 18 - 27 °C
+  float temperature = random(1800, 2701) / 100.0;
+  
+  // TDS: 150 - 2000 ppm
+  int tds = random(150, 2001);
+  
+  packet += "PH:" + String(ph, 2) + ",";
+  packet += "TURB:" + String(turbidity, 2) + ",";
+  packet += "TEMP:" + String(temperature, 2) + ",";
+  packet += "TDS:" + String(tds);
 
   return packet;
 }

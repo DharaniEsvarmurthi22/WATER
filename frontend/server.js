@@ -2,7 +2,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 5000;
+// Allow overriding the port via environment variable for easier local testing
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
 const MIME_TYPES = {
     '.html': 'text/html',
     '.css': 'text/css',
@@ -13,10 +14,10 @@ const MIME_TYPES = {
 
 const server = http.createServer((req, res) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    
+
     // Strip query string from URL
     const urlPath = req.url.split('?')[0];
-    
+
     // Handle root path
     let filePath = urlPath === '/' ? '/index.html' : urlPath;
     filePath = path.join(__dirname, filePath);
@@ -37,7 +38,7 @@ const server = http.createServer((req, res) => {
             return;
         }
 
-        res.writeHead(200, { 
+        res.writeHead(200, {
             'Content-Type': contentType,
             'Access-Control-Allow-Origin': '*'
         });

@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Water Quality Dashboard - Sign In</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
             background: linear-gradient(135deg, #0ea5a4 0%, #06b6d4 100%);
@@ -15,6 +21,7 @@
             justify-content: center;
             padding: 20px;
         }
+
         .login-card {
             background: white;
             border-radius: 16px;
@@ -23,10 +30,12 @@
             max-width: 400px;
             padding: 40px;
         }
+
         .logo-section {
             text-align: center;
             margin-bottom: 32px;
         }
+
         .logo {
             width: 64px;
             height: 64px;
@@ -40,19 +49,23 @@
             color: #0ea5a4;
             margin-bottom: 16px;
         }
+
         h1 {
             font-size: 24px;
             color: #111827;
             margin-bottom: 8px;
             font-weight: 600;
         }
+
         .subtitle {
             color: #6b7280;
             font-size: 14px;
         }
+
         .form-group {
             margin-bottom: 20px;
         }
+
         label {
             display: block;
             font-size: 14px;
@@ -60,6 +73,7 @@
             color: #374151;
             margin-bottom: 8px;
         }
+
         input {
             width: 100%;
             padding: 12px 16px;
@@ -68,11 +82,40 @@
             font-size: 15px;
             transition: all 0.2s;
         }
+
+        .password-wrapper {
+            position: relative;
+        }
+
+        .password-wrapper input {
+            padding-right: 48px;
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toggle-password:hover {
+            color: #0ea5a4;
+        }
+
         input:focus {
             outline: none;
             border-color: #0ea5a4;
             box-shadow: 0 0 0 3px rgba(14, 165, 164, 0.1);
         }
+
         .btn-submit {
             width: 100%;
             padding: 12px;
@@ -86,14 +129,17 @@
             transition: transform 0.2s, opacity 0.2s;
             margin-top: 8px;
         }
+
         .btn-submit:hover:not(:disabled) {
             opacity: 0.9;
             transform: translateY(-1px);
         }
+
         .btn-submit:disabled {
             opacity: 0.6;
             cursor: not-allowed;
         }
+
         .error-message {
             background: #fee2e2;
             color: #dc2626;
@@ -103,9 +149,11 @@
             margin-bottom: 20px;
             display: none;
         }
+
         .error-message.show {
             display: block;
         }
+
         .footer-text {
             text-align: center;
             color: #9ca3af;
@@ -114,12 +162,13 @@
         }
     </style>
 </head>
+
 <body>
     <div class="login-card">
         <div class="logo-section">
-            <div class="logo">WQ</div>
-            <h1>Water Quality Dashboard</h1>
-            <p class="subtitle">Secure access to real-time monitoring</p>
+            <img src="eyenetaqua-logo.jpg" alt="EyeNetAqua" style="height: 80px; width: auto; margin-bottom: 16px;">
+            <h1>JalSuraksha Insight Grid</h1>
+            <p class="subtitle">Powered by EyeNetAqua's Water Surveillance Matrix</p>
         </div>
         <form id="loginForm">
             <div class="error-message" id="errorMessage"></div>
@@ -129,7 +178,26 @@
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" required autocomplete="current-password">
+                <div class="password-wrapper">
+                    <input type="password" id="password" required autocomplete="current-password">
+                    <button type="button" class="toggle-password" id="togglePassword"
+                        aria-label="Toggle password visibility">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            id="eyeIcon">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            id="eyeOffIcon" style="display: none;">
+                            <path
+                                d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24">
+                            </path>
+                            <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <button type="submit" class="btn-submit" id="submitBtn">Sign In</button>
         </form>
@@ -139,7 +207,7 @@
     <script src="env-config.js"></script>
     <script>
         let supabase;
-        (async function() {
+        (async function () {
             try {
                 if (window.ENV && window.ENV.SUPABASE_URL && window.ENV.SUPABASE_ANON_KEY) {
                     supabase = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY);
@@ -184,6 +252,24 @@
                 submitBtn.textContent = "Sign In";
             }
         });
+
+        // Toggle password visibility
+        document.getElementById("togglePassword").addEventListener("click", function () {
+            const passwordInput = document.getElementById("password");
+            const eyeIcon = document.getElementById("eyeIcon");
+            const eyeOffIcon = document.getElementById("eyeOffIcon");
+
+            if (passwordInput.type === "password") {
+                passwordInput.type = "text";
+                eyeIcon.style.display = "none";
+                eyeOffIcon.style.display = "block";
+            } else {
+                passwordInput.type = "password";
+                eyeIcon.style.display = "block";
+                eyeOffIcon.style.display = "none";
+            }
+        });
+
         function showError(message) {
             const errorEl = document.getElementById("errorMessage");
             errorEl.textContent = message;
@@ -195,4 +281,5 @@
         }
     </script>
 </body>
+
 </html>

@@ -13,7 +13,7 @@ class LocationDashboard {
         this.currentPage = 1;
         this.pageSize = 20;
         this.activeSensorType = null; // Default to All Sensors view
-        
+
         this.init();
     }
 
@@ -80,33 +80,33 @@ class LocationDashboard {
     async loadAllSensorsData() {
         try {
             console.log('📡 Loading data for all sensors at location:', this.locationId);
-            
+
             if (!this.supabase) {
                 console.warn('⚠️ No Supabase client, using sample data');
                 this.createAllSampleData();
                 return;
             }
-            
+
             // First, fetch location details from database
             await this.fetchLocationDetailsFromDB();
-            
+
             const sensorTypes = ['ph', 'turbidity', 'temperature', 'tds'];
-            
+
             for (const sensorType of sensorTypes) {
                 const sensorId = `${this.locationId}_${sensorType}`;
-                
+
                 const { data, error } = await this.supabase
                     .from('sensor_readings')
                     .select('*')
                     .eq('sensor_id', sensorId)
                     .order('timestamp', { ascending: false })
                     .limit(1);
-                
+
                 if (data && data.length > 0) {
                     const record = data[0];
                     const locationDetails = this.locationDetails || this.getLocationDetails(this.locationId);
                     const sensorTypeInfo = this.getSensorTypeInfo(sensorType);
-                    
+
                     this.allSensorsData[sensorType] = {
                         id: sensorId,
                         name: `${locationDetails.name} - ${sensorTypeInfo.name}`,
@@ -121,32 +121,32 @@ class LocationDashboard {
                     this.allSensorsData[sensorType] = this.createSampleForType(sensorType);
                 }
             }
-            
+
             console.log('✅ Loaded all sensors data:', this.allSensorsData);
-            
+
         } catch (error) {
             console.error('❌ Error loading all sensors:', error);
             this.createAllSampleData();
         }
     }
-    
+
     async fetchLocationDetailsFromDB() {
         try {
             if (!this.supabase) return;
-            
+
             const { data: locationData, error } = await this.supabase
                 .from('locations')
                 .select('*')
                 .eq('location_id', this.locationId)
                 .single();
-            
+
             if (error || !locationData) {
                 console.warn('⚠️ Location not found in database, using fallback');
                 return;
             }
-            
+
             console.log('✅ Found location in database:', locationData);
-            
+
             // Store location details
             this.locationDetails = {
                 name: locationData.name,
@@ -155,31 +155,31 @@ class LocationDashboard {
                 latitude: locationData.latitude,
                 longitude: locationData.longitude
             };
-            
+
             // Update page title
             const titleElement = document.getElementById('locationTitle');
             if (titleElement) {
                 titleElement.textContent = locationData.name;
             }
-            
+
         } catch (error) {
             console.error('❌ Error fetching location details:', error);
         }
     }
-    
+
     createAllSampleData() {
         const sensorTypes = ['ph', 'turbidity', 'temperature', 'tds'];
         sensorTypes.forEach(type => {
             this.allSensorsData[type] = this.createSampleForType(type);
         });
     }
-    
+
     createSampleForType(sensorType) {
         const locationDetails = this.locationDetails || this.getLocationDetails(this.locationId);
         const sensorTypeInfo = this.getSensorTypeInfo(sensorType);
-        
+
         let sampleValue;
-        switch(sensorType) {
+        switch (sensorType) {
             case 'ph':
                 sampleValue = 7.0 + (Math.random() * 1.5 - 0.75);
                 break;
@@ -195,7 +195,7 @@ class LocationDashboard {
             default:
                 sampleValue = Math.random() * 100;
         }
-        
+
         return {
             id: `${this.locationId}_${sensorType}`,
             name: `${locationDetails.name} - ${sensorTypeInfo.name}`,
@@ -206,11 +206,11 @@ class LocationDashboard {
             sensorType: sensorTypeInfo.name
         };
     }
-    
+
     createSensorTabs() {
         const tabsContainer = document.getElementById('sensorTabs');
         if (!tabsContainer) return;
-        
+
         const sensorTypes = [
             { id: 'all', name: 'All Sensors', icon: 'fa-th-large' },
             { id: 'ph', name: 'pH Level', icon: 'fa-flask' },
@@ -218,23 +218,22 @@ class LocationDashboard {
             { id: 'temperature', name: 'Temperature', icon: 'fa-thermometer-half' },
             { id: 'tds', name: 'TDS', icon: 'fa-water' }
         ];
-        
+
         tabsContainer.innerHTML = sensorTypes.map(type => {
             const isActive = (type.id === 'all' && !this.activeSensorType) || type.id === this.activeSensorType;
             return `
                 <button 
                     data-sensor="${type.id}" 
-                    class="sensor-tab px-4 py-2 rounded-lg font-medium transition-colors ${
-                        isActive 
-                            ? 'bg-water-blue text-white' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }"
+                    class="sensor-tab px-4 py-2 rounded-lg font-medium transition-colors ${isActive
+                    ? 'bg-water-blue text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }"
                 >
                     <i class="fas ${type.icon} mr-2"></i>${type.name}
                 </button>
             `;
         }).join('');
-        
+
         // Add click handlers
         document.querySelectorAll('.sensor-tab').forEach(tab => {
             tab.addEventListener('click', (e) => {
@@ -243,20 +242,20 @@ class LocationDashboard {
             });
         });
     }
-    
+
     renderAllSensorsGrid() {
         const gridContainer = document.getElementById('allSensorsGrid');
         if (!gridContainer) return;
-        
+
         const sensorTypes = ['ph', 'turbidity', 'temperature', 'tds'];
-        
+
         gridContainer.innerHTML = sensorTypes.map(type => {
             const sensor = this.allSensorsData[type];
             if (!sensor) return '';
-            
+
             const statusConfig = this.getStatusConfig(sensor.status);
             const sensorTypeInfo = this.getSensorTypeInfo(type);
-            
+
             return `
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer" data-sensor="${type}">
                     <div class="flex items-center justify-between mb-4">
@@ -278,7 +277,7 @@ class LocationDashboard {
                 </div>
             `;
         }).join('');
-        
+
         // Add click handlers to sensor cards
         document.querySelectorAll('#allSensorsGrid > div').forEach(card => {
             card.addEventListener('click', (e) => {
@@ -287,7 +286,7 @@ class LocationDashboard {
             });
         });
     }
-    
+
     switchSensor(sensorType) {
         if (sensorType === 'all') {
             this.activeSensorType = null;
@@ -298,7 +297,7 @@ class LocationDashboard {
             this.sensorId = `${this.locationId}_${sensorType}`;
             document.getElementById('allSensorsGrid').classList.add('hidden');
         }
-        
+
         // Update tab active states
         document.querySelectorAll('.sensor-tab').forEach(tab => {
             const tabSensor = tab.getAttribute('data-sensor');
@@ -308,12 +307,12 @@ class LocationDashboard {
                 tab.className = 'sensor-tab px-4 py-2 rounded-lg font-medium transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200';
             }
         });
-        
+
         // Reload data for selected sensor
         this.loadSensorData();
         this.loadHistoricalData();
     }
-    
+
     getSensorIcon(type) {
         const icons = {
             'ph': 'fa-flask',
@@ -323,7 +322,7 @@ class LocationDashboard {
         };
         return icons[type] || 'fa-tachometer-alt';
     }
-    
+
     getSensorGradient(type) {
         const gradients = {
             'ph': 'from-blue-500 to-cyan-500',
@@ -337,13 +336,13 @@ class LocationDashboard {
     async loadSensorData() {
         try {
             console.log('📡 Loading data for sensor:', this.sensorId);
-            
+
             if (!this.supabase) {
                 console.warn('⚠️ No Supabase client, using sample data');
                 this.createSampleSensorData();
                 return;
             }
-            
+
             // Fetch the latest reading for this sensor from sensor_readings table
             const { data, error } = await this.supabase
                 .from('sensor_readings')
@@ -363,15 +362,15 @@ class LocationDashboard {
 
             if (data && data.length > 0) {
                 const record = data[0];
-                
+
                 // Extract location from sensor_id (e.g., "ukkadam_ph" -> "ukkadam")
                 const locationId = this.sensorId.split('_')[0];
                 const sensorType = this.sensorId.split('_')[1];
-                
+
                 // Get location details
                 const locationDetails = this.getLocationDetails(locationId);
                 const sensorTypeInfo = this.getSensorTypeInfo(sensorType);
-                
+
                 this.sensorData = {
                     id: record.sensor_id,
                     name: `${locationDetails.name} - ${sensorTypeInfo.name}`,
@@ -384,7 +383,7 @@ class LocationDashboard {
                     location: locationDetails.name,
                     sensorType: sensorTypeInfo.name
                 };
-                
+
                 console.log('✅ Loaded sensor data:', this.sensorData);
             } else {
                 console.warn('⚠️ No data found for sensor:', this.sensorId, '- using sample data');
@@ -399,7 +398,7 @@ class LocationDashboard {
             this.createSampleSensorData();
         }
     }
-    
+
     getLocationDetails(locationId) {
         // Return simple fallback - database will provide actual details
         return {
@@ -408,7 +407,7 @@ class LocationDashboard {
             description: `Water quality monitoring station - ${locationId.charAt(0).toUpperCase() + locationId.slice(1)}`
         };
     }
-    
+
     getSensorTypeInfo(sensorType) {
         const types = {
             'ph': { name: 'pH Level', unit: 'pH' },
@@ -416,24 +415,24 @@ class LocationDashboard {
             'temperature': { name: 'Temperature', unit: '°C' },
             'tds': { name: 'TDS', unit: 'ppm' }
         };
-        
+
         return types[sensorType] || { name: sensorType, unit: 'units' };
     }
 
     createSampleSensorData() {
         console.log('📝 Creating sample data for sensor:', this.sensorId);
-        
+
         // Extract location and sensor type from sensor_id
         const parts = this.sensorId.split('_');
         const locationId = parts[0];
         const sensorType = parts[1] || 'ph';
-        
+
         const locationDetails = this.getLocationDetails(locationId);
         const sensorTypeInfo = this.getSensorTypeInfo(sensorType);
-        
+
         // Generate appropriate sample value based on sensor type
         let sampleValue;
-        switch(sensorType) {
+        switch (sensorType) {
             case 'ph':
                 sampleValue = 7.0 + (Math.random() * 1.5 - 0.75); // 6.25 to 7.75
                 break;
@@ -462,7 +461,7 @@ class LocationDashboard {
             location: locationDetails.name,
             sensorType: sensorTypeInfo.name
         };
-        
+
         console.log('✅ Sample sensor data created:', this.sensorData);
 
         this.updateSensorInfo();
@@ -471,7 +470,7 @@ class LocationDashboard {
     async loadHistoricalData() {
         try {
             console.log('Loading historical data for:', this.sensorId);
-            
+
             // Fetch historical readings from sensor_readings table
             const { data, error } = await this.supabase
                 .from('sensor_readings')
@@ -492,7 +491,7 @@ class LocationDashboard {
                     rssi: record.rssi,
                     status: this.determineStatusFromValue(record.value)
                 }));
-                
+
                 console.log(`Loaded ${this.historicalData.length} historical readings`);
             } else {
                 console.warn('No historical data found, generating sample data');
@@ -519,7 +518,7 @@ class LocationDashboard {
             const timestamp = new Date(now.getTime() - (i * 30 * 60 * 1000));
             const variation = (Math.random() - 0.5) * 20; // ±10 variation
             const value = Math.max(0, Math.min(100, baseValue + variation));
-            
+
             this.historicalData.push({
                 timestamp: timestamp.toISOString(),
                 value: parseFloat(value.toFixed(1)),
@@ -549,10 +548,10 @@ class LocationDashboard {
     determineStatusFromValue(value) {
         // Get sensor type to determine appropriate thresholds
         if (!this.sensorData) return 'active';
-        
+
         const sensorType = this.sensorId.split('_')[1];
-        
-        switch(sensorType) {
+
+        switch (sensorType) {
             case 'ph':
                 // pH should be between 6.5 and 8.5 for safe drinking water
                 if (value < 6.5 || value > 8.5) return 'warning';
@@ -601,7 +600,7 @@ class LocationDashboard {
         // Update sensor information section
         document.getElementById('sensorId').textContent = this.sensorData.id;
         document.getElementById('sensorLocation').textContent = this.sensorData.name;
-        document.getElementById('sensorCoordinates').textContent = 
+        document.getElementById('sensorCoordinates').textContent =
             `${this.sensorData.latitude.toFixed(6)}, ${this.sensorData.longitude.toFixed(6)}`;
 
         const sensorStatusElement = document.getElementById('sensorStatus');
@@ -629,7 +628,7 @@ class LocationDashboard {
             // Calculate trend
             const firstHalf = last24h.slice(0, Math.floor(last24h.length / 2));
             const secondHalf = last24h.slice(Math.floor(last24h.length / 2));
-            
+
             if (firstHalf.length > 0 && secondHalf.length > 0) {
                 const firstAvg = firstHalf.reduce((sum, d) => sum + d.value, 0) / firstHalf.length;
                 const secondAvg = secondHalf.reduce((sum, d) => sum + d.value, 0) / secondHalf.length;
@@ -665,10 +664,10 @@ class LocationDashboard {
 
     initRealtimeChart() {
         const ctx = document.getElementById('realtimeChart').getContext('2d');
-        
+
         // Get last 20 data points for real-time view
         const realtimeData = this.historicalData.slice(-20);
-        
+
         this.realtimeChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -717,7 +716,7 @@ class LocationDashboard {
 
     initHistoricalChart() {
         const ctx = document.getElementById('historicalChart').getContext('2d');
-        
+
         this.historicalChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -768,12 +767,12 @@ class LocationDashboard {
         tbody.innerHTML = pageData.map((record, index) => {
             const timestamp = new Date(record.timestamp);
             const statusConfig = this.getStatusConfig(record.status);
-            
+
             // Calculate change from previous reading
             const prevIndex = startIndex + index + 1;
             const prevRecord = this.historicalData.slice().reverse()[prevIndex];
             let changeHtml = '<span class="text-gray-400">--</span>';
-            
+
             if (prevRecord) {
                 const change = record.value - prevRecord.value;
                 const changeClass = change > 0 ? 'text-red-500' : change < 0 ? 'text-green-500' : 'text-gray-500';
@@ -815,16 +814,16 @@ class LocationDashboard {
 
         try {
             console.log('Setting up real-time subscription for:', this.sensorId);
-            
+
             this.realtimeChannel = this.supabase
                 .channel(`sensor_${this.sensorId}_changes`)
-                .on('postgres_changes', 
-                    { 
-                        event: 'INSERT', 
-                        schema: 'public', 
+                .on('postgres_changes',
+                    {
+                        event: 'INSERT',
+                        schema: 'public',
                         table: 'sensor_readings',
                         filter: `sensor_id=eq.${this.sensorId}`
-                    }, 
+                    },
                     (payload) => {
                         console.log('Received real-time update:', payload.new);
                         this.handleRealtimeUpdate(payload.new);
@@ -845,7 +844,7 @@ class LocationDashboard {
         const sensorType = this.sensorId.split('_')[1];
         const locationDetails = this.getLocationDetails(locationId);
         const sensorTypeInfo = this.getSensorTypeInfo(sensorType);
-        
+
         // Update current sensor data
         this.sensorData = {
             id: newRecord.sensor_id,
@@ -901,8 +900,8 @@ class LocationDashboard {
 
         this.historicalChart.data.labels = filteredData.map(d => {
             const date = new Date(d.timestamp);
-            return timeRange === '1h' || timeRange === '6h' ? 
-                date.toLocaleTimeString() : 
+            return timeRange === '1h' || timeRange === '6h' ?
+                date.toLocaleTimeString() :
                 date.toLocaleDateString();
         });
         this.historicalChart.data.datasets[0].data = filteredData.map(d => d.value);
@@ -952,7 +951,7 @@ class LocationDashboard {
                 }
             });
         }
-        
+
         // Time range selector
         document.getElementById('timeRangeSelect').addEventListener('change', () => {
             this.updateHistoricalChart();

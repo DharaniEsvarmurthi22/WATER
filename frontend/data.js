@@ -98,7 +98,7 @@ async function fetchSensorData() {
             // No readings yet, but still show locations
             sensorData.locations = sampleLocations;
             updateLocationsList();
-            
+
             // Refresh map markers even without readings
             if (window.mapManager && window.mapManager.addVillageMarkers) {
                 console.log('🗺️ Refreshing map markers with database locations (no readings yet)');
@@ -115,17 +115,31 @@ async function fetchSensorData() {
 function updateLocationsWithData(readings) {
     // Group readings by location
     const locationReadings = {};
-    
+
     readings.forEach(reading => {
+        // Validate pH values - only accept pH between 0.1 and 14
+        if (reading.sensor_id.includes('_ph')) {
+            const phValue = parseFloat(reading.value);
+            if (phValue < 0.1 || phValue > 14) {
+                console.warn(`Invalid pH value ${phValue} for sensor ${reading.sensor_id} - skipping`);
+                return; // Skip invalid pH readings
+            }
+        }
+
         // Extract location from sensor_id (e.g., "ukkadam_ph" -> "ukkadam")
         const parts = reading.sensor_id.split('_');
         const locationId = parts[0];
-        
+
         if (!locationReadings[locationId]) {
             locationReadings[locationId] = [];
         }
         locationReadings[locationId].push(reading);
     });
+
+    // Make sure sensorData.locations exists before trying to update it
+    if (!sensorData.locations || sensorData.locations.length === 0) {
+        sensorData.locations = sampleLocations;
+    }
 
     // Update each location with its readings
     sensorData.locations.forEach(location => {
@@ -141,13 +155,16 @@ function updateLocationsWithData(readings) {
             location.status = "inactive";
         }
     });
-    sensorData.statistics.activeSensors = Object.keys(locationReadings).length * 4; // 4 sensors per location
-    sensorData.statistics.avgReading = readings.length > 0 
-        ? readings.reduce((sum, r) => sum + parseFloat(r.value), 0) / readings.length 
+
+    // Count actual unique sensors from readings (not assumed 4 per location)
+    const uniqueSensors = new Set(readings.map(r => r.sensor_id));
+    sensorData.statistics.activeSensors = uniqueSensors.size;
+    sensorData.statistics.avgReading = readings.length > 0
+        ? readings.reduce((sum, r) => sum + parseFloat(r.value), 0) / readings.length
         : 0;
 
     updateLocationsList();
-    
+
     // Refresh map markers with new locations
     if (window.mapManager && window.mapManager.addVillageMarkers) {
         console.log('🗺️ Refreshing map markers with new locations');
@@ -172,7 +189,7 @@ function subscribeToRealtimeUpdates() {
                 console.log('🔔 New sensor reading:', payload.new);
                 // Refresh data when new reading arrives
                 fetchSensorData();
-                
+
                 // Also add the new reading to recent readings immediately
                 const container = document.getElementById('recentReadings');
                 if (container && container.firstChild) {
@@ -187,27 +204,82 @@ function subscribeToRealtimeUpdates() {
     console.log('✅ Subscribed to real-time updates');
 }
 
+// Subscribe to backend changes for locations, popup config, and overlay metadata
+function subscribeToBackendChanges() {
+    if (!supabase) return;
+
+    try {
+        const dbChannel = supabase.channel('db_changes')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'locations' }, payload => {
+                console.log('🔁 locations INSERT detected, refreshing data');
+                fetchSensorData();
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'locations' }, payload => {
+                console.log('🔁 locations UPDATE detected, refreshing data');
+                fetchSensorData();
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'locations' }, payload => {
+                console.log('🔁 locations DELETE detected, refreshing data');
+                fetchSensorData();
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            // popup_config changes may alter which sensors/popups are shown
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'popup_config' }, payload => {
+                console.log('🔁 popup_config INSERT detected, refreshing popups');
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'popup_config' }, payload => {
+                console.log('🔁 popup_config UPDATE detected, refreshing popups');
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'popup_config' }, payload => {
+                console.log('🔁 popup_config DELETE detected, refreshing popups');
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            // Best-effort: if you store overlay metadata in a table such as `kml_overlays` or `overlays`
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'kml_overlays' }, payload => {
+                console.log('🔁 kml_overlays INSERT detected, reloading overlays');
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'kml_overlays' }, payload => {
+                console.log('🔁 kml_overlays UPDATE detected, reloading overlays');
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'kml_overlays' }, payload => {
+                console.log('🔁 kml_overlays DELETE detected, reloading overlays');
+                if (window.mapManager && window.mapManager.reloadKMLLayers) window.mapManager.reloadKMLLayers();
+            })
+            .subscribe();
+
+        console.log('✅ Subscribed to backend DB changes (locations/popup_config/kml_overlays)');
+    } catch (err) {
+        console.warn('⚠️ Failed to subscribe to backend changes:', err.message || err);
+    }
+}
+
 // Initialize locations
 function initializeLocations() {
     sensorData.locations = sampleLocations;
     updateLocationsList();
-    
+
     // Fetch real data from Supabase
     if (supabase) {
         fetchSensorData();
         subscribeToRealtimeUpdates();
-        
+
         // Auto-refresh every 30 seconds
         setInterval(fetchSensorData, 30000);
     }
 }
 
-// Update locations list in the UI
-function updateLocationsList() {
+// Update locations list in the UI (helper function that accepts custom data)
+function updateLocationsListWithData(locations) {
     const locationsList = document.getElementById('locationsList');
     if (!locationsList) return;
 
-    locationsList.innerHTML = sensorData.locations.map(location => `
+    locationsList.innerHTML = locations.map(location => `
         <div class="location-item" data-id="${location.id}">
             <div class="flex items-center justify-between mb-2">
                 <h3 class="font-medium text-gray-900">${location.name}</h3>
@@ -228,7 +300,7 @@ function updateLocationsList() {
     locationItems.forEach(item => {
         item.addEventListener('click', () => {
             const locationId = item.dataset.id;
-            const location = sensorData.locations.find(loc => loc.id === locationId);
+            const location = sampleLocations.find(loc => loc.id === locationId);
             if (location) {
                 // Remove active class from all items
                 locationItems.forEach(i => i.classList.remove('active'));
@@ -238,41 +310,64 @@ function updateLocationsList() {
                 centerMapOnLocation(location.coordinates);
                 // Show location details
                 showLocationDetails(location);
+
+                // Hide the search results list after clicking
+                const searchInput = document.getElementById('locationSearch');
+                const locationsList = document.getElementById('locationsList');
+                if (searchInput) searchInput.value = '';
+                if (locationsList) locationsList.classList.add('hidden');
             }
         });
     });
-    
+
     // Update location filter dropdowns dynamically
     updateLocationFilters();
 }
 
+// Update locations list in the UI (main function using sensorData)
+function updateLocationsList() {
+    updateLocationsListWithData(sensorData.locations);
+}
+
 // Filter locations based on search
 function filterLocations(searchText) {
-    const filteredLocations = sensorData.locations.filter(location => 
+    const locationsList = document.getElementById('locationsList');
+
+    if (searchText.length === 0) {
+        // Hide list when search is empty
+        locationsList.classList.add('hidden');
+        return;
+    }
+
+    // Show list and filter locations
+    locationsList.classList.remove('hidden');
+
+    const filteredLocations = sampleLocations.filter(location =>
         location.name.toLowerCase().includes(searchText.toLowerCase()) ||
         location.description.toLowerCase().includes(searchText.toLowerCase())
     );
-    sensorData.locations = filteredLocations;
-    updateLocationsList();
+
+    // Update list with filtered locations only
+    updateLocationsListWithData(filteredLocations);
 }
 
 // Update location filter dropdowns dynamically
 function updateLocationFilters() {
     const statsLocationFilter = document.getElementById('statsLocationFilter');
     const locationFilter = document.getElementById('locationFilter');
-    
+
     // Get unique locations from data
     const uniqueLocations = sampleLocations.map(loc => ({
         id: loc.id,
         name: loc.name
     }));
-    
+
     // Build options HTML
     const locationOptions = `
         <option value="all">All Locations</option>
         ${uniqueLocations.map(loc => `<option value="${loc.id}">${loc.name}</option>`).join('')}
     `;
-    
+
     // Update both dropdowns
     if (statsLocationFilter) {
         const currentValue = statsLocationFilter.value;
@@ -282,7 +377,7 @@ function updateLocationFilters() {
             statsLocationFilter.value = currentValue;
         }
     }
-    
+
     if (locationFilter) {
         const currentValue = locationFilter.value;
         locationFilter.innerHTML = locationOptions;
@@ -297,7 +392,7 @@ function updateLocationFilters() {
 function updateStatistics(locationFilter = 'all') {
     const statsContainer = document.getElementById('statsContainer');
     if (!statsContainer) return;
-    
+
     if (locationFilter === 'all') {
         // Show overall statistics
         statsContainer.innerHTML = `
@@ -332,11 +427,11 @@ function updateStatistics(locationFilter = 'all') {
     } else {
         // Show location-specific statistics with sensor breakdown
         const locationReadings = allReadings.filter(r => r.sensor_id.startsWith(locationFilter));
-        
+
         // Group by sensor type
         const sensorTypes = ['ph', 'turbidity', 'temperature', 'tds'];
         const sensorStats = {};
-        
+
         sensorTypes.forEach(type => {
             const typeReadings = locationReadings.filter(r => r.sensor_id.endsWith(type));
             if (typeReadings.length > 0) {
@@ -350,14 +445,14 @@ function updateStatistics(locationFilter = 'all') {
                 };
             }
         });
-        
+
         const locationNames = {
             'ukkadam': 'Ukkadam',
             'singanallur': 'Singanallur',
             'redhills': 'Red Hills',
             'porur': 'Porur'
         };
-        
+
         statsContainer.innerHTML = `
             <div class="bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg p-3 text-white mb-3">
                 <div class="text-center">
@@ -367,8 +462,8 @@ function updateStatistics(locationFilter = 'all') {
                 </div>
             </div>
             ${Object.entries(sensorStats).map(([type, stats]) => {
-                const sensorInfo = getSensorDisplayInfo(type);
-                return `
+            const sensorInfo = getSensorDisplayInfo(type);
+            return `
                     <div class="bg-gradient-to-r ${sensorInfo.gradient} rounded-lg p-3 text-white">
                         <div class="flex items-center justify-between mb-2">
                             <div class="flex items-center gap-2">
@@ -391,7 +486,7 @@ function updateStatistics(locationFilter = 'all') {
                         </div>
                     </div>
                 `;
-            }).join('')}
+        }).join('')}
         `;
     }
 }
@@ -420,13 +515,13 @@ function getSensorDisplayInfo(type) {
 function updateRecentReadings(readings) {
     const container = document.getElementById('recentReadings');
     if (!container) return;
-    
+
     container.innerHTML = readings.map(reading => {
         // Extract sensor type from sensor_id (e.g., "ukkadam_ph" -> "ph")
         const parts = reading.sensor_id.split('_');
         const location = parts[0];
         const sensorType = parts[1];
-        
+
         // Format sensor type nicely
         const sensorNames = {
             'ph': 'pH',
@@ -434,18 +529,18 @@ function updateRecentReadings(readings) {
             'temperature': 'Temp',
             'tds': 'TDS'
         };
-        
+
         const sensorUnits = {
             'ph': 'pH',
             'turbidity': 'NTU',
             'temperature': '°C',
             'tds': 'ppm'
         };
-        
+
         const displayName = sensorNames[sensorType] || sensorType;
         const unit = sensorUnits[sensorType] || '';
         const locationName = location.charAt(0).toUpperCase() + location.slice(1);
-        
+
         return `
             <div class="bg-gray-50 p-2 rounded hover:bg-gray-100 transition-colors">
                 <div class="flex justify-between items-center">
@@ -485,15 +580,15 @@ let currentSensorFilter = 'all';
 // Filter readings based on selected filters
 function filterReadings() {
     let filtered = allReadings;
-    
+
     if (currentLocationFilter !== 'all') {
         filtered = filtered.filter(r => r.sensor_id.startsWith(currentLocationFilter));
     }
-    
+
     if (currentSensorFilter !== 'all') {
         filtered = filtered.filter(r => r.sensor_id.endsWith(currentSensorFilter));
     }
-    
+
     updateRecentReadings(filtered.slice(0, 10));
 }
 
@@ -503,6 +598,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (initializeSupabase()) {
         // Initialize locations with real data
         initializeLocations();
+        // Start subscriptions for backend changes (locations, overlays, popup config)
+        subscribeToBackendChanges();
     } else {
         // Fallback to sample data if Supabase fails
         console.warn('⚠️ Using sample data - Supabase not available');
@@ -514,13 +611,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('locationSearch');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
-            const searchText = e.target.value;
-            if (searchText.length > 0) {
-                filterLocations(searchText);
-            } else {
-                // Reset to all locations
-                sensorData.locations = sampleLocations;
-                updateLocationsList();
+            const searchText = e.target.value.trim();
+            filterLocations(searchText);
+        });
+        // Jump to location on Enter
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const searchText = e.target.value.trim();
+                if (!searchText) return;
+
+                // Try exact match first, then partial match
+                const textLower = searchText.toLowerCase();
+                let target = sampleLocations.find(loc => loc.name.toLowerCase() === textLower);
+                if (!target) {
+                    target = sampleLocations.find(loc => loc.name.toLowerCase().includes(textLower));
+                }
+
+                if (target) {
+                    // Center map on found location and request popup opening (works for HTML markers and KML points)
+                    if (window.mapManager && window.mapManager.centerOnLocation) {
+                        window.mapManager.centerOnLocation(target.coordinates, 14, { openPopupFor: target.id });
+                    } else {
+                        centerMapOnLocation(target.coordinates);
+                    }
+                    // Optionally show details
+                    showLocationDetails(target);
+                    // Clear search and hide list
+                    e.target.value = '';
+                    const locationsList = document.getElementById('locationsList');
+                    if (locationsList) locationsList.classList.add('hidden');
+                } else {
+                    // No exact/partial match: fall back to filter (shows list)
+                    filterLocations(searchText);
+                }
             }
         });
     }
@@ -539,21 +662,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set up filter dropdowns for recent readings
     const locationFilter = document.getElementById('locationFilter');
     const sensorFilter = document.getElementById('sensorFilter');
-    
+
     if (locationFilter) {
         locationFilter.addEventListener('change', (e) => {
             currentLocationFilter = e.target.value;
             filterReadings();
         });
     }
-    
+
     if (sensorFilter) {
         sensorFilter.addEventListener('change', (e) => {
             currentSensorFilter = e.target.value;
             filterReadings();
         });
     }
-    
+
     // Set up statistics location filter
     const statsLocationFilter = document.getElementById('statsLocationFilter');
     if (statsLocationFilter) {
@@ -561,11 +684,11 @@ document.addEventListener('DOMContentLoaded', () => {
             updateStatistics(e.target.value);
         });
     }
-    
+
     // Set up data range filters
     const minValue = document.getElementById('minValue');
     const maxValue = document.getElementById('maxValue');
-    
+
     if (minValue) {
         minValue.addEventListener('input', () => {
             applyDataRangeFilter();
@@ -576,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     if (maxValue) {
         maxValue.addEventListener('input', () => {
             applyDataRangeFilter();
@@ -596,12 +719,12 @@ document.addEventListener('DOMContentLoaded', () => {
 function applyDataRangeFilter() {
     const minInput = document.getElementById('minValue');
     const maxInput = document.getElementById('maxValue');
-    
+
     const min = minInput && minInput.value !== '' ? parseFloat(minInput.value) : -Infinity;
     const max = maxInput && maxInput.value !== '' ? parseFloat(maxInput.value) : Infinity;
-    
+
     console.log('🔍 Applying data range filter:', { min, max });
-    
+
     // If both are empty, show all locations
     if (min === -Infinity && max === Infinity) {
         console.log('📊 No filter applied - showing all locations');
@@ -612,7 +735,7 @@ function applyDataRangeFilter() {
         }
         return;
     }
-    
+
     // Filter locations based on their last reading (average of all sensors)
     const filteredLocations = sampleLocations.filter(location => {
         if (!location.lastReading && location.lastReading !== 0) {
@@ -623,20 +746,20 @@ function applyDataRangeFilter() {
         console.log(`📍 ${location.name}: ${location.lastReading.toFixed(1)} - ${inRange ? '✅ IN' : '❌ OUT'} of range [${min}, ${max}]`);
         return inRange;
     });
-    
+
     console.log(`✅ Filtered: ${filteredLocations.length} of ${sampleLocations.length} locations`);
-    
+
     // Update map markers
     if (window.mapManager && window.mapManager.updateMarkersWithFilter) {
         window.mapManager.updateMarkersWithFilter(filteredLocations);
     } else {
         console.warn('⚠️ mapManager.updateMarkersWithFilter not available');
     }
-    
+
     // Update location list
     sensorData.locations = filteredLocations;
     updateLocationsList();
-    
+
     // Show feedback message
     if (filteredLocations.length === 0) {
         console.warn('⚠️ No locations match the filter range');
