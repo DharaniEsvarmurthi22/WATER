@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claim Your Water Monitoring Device</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="env-config.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+        }
+        
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            color: #555;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: 'Courier New', monospace;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            transition: all 0.3s;
+        }
+        
+        button:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-secondary {
+            background: #48bb78;
+            margin-top: 10px;
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background: #38a169;
+        }
+        
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 2px solid #bee5eb;
+        }
+        
+        .device-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: border-color 0.3s;
+        }
+        
+        .device-card:hover {
+            border-color: #667eea;
+        }
+        
+        .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .device-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+        
+        .device-secret {
+            background: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #667eea;
+            border: 1px solid #667eea;
+        }
+        
+        .device-info {
+            font-size: 13px;
+            color: #666;
+            margin-top: 8px;
+        }
+        
+        .device-info div {
+            margin-bottom: 4px;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge-success {
+            background: #48bb78;
+            color: white;
+        }
+        
+        .badge-warning {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 13px;
+            width: auto;
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+        }
+        
+        .btn-danger:hover:not(:disabled) {
+            background: #c0392b;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Device Management</h1>
+        <p class="subtitle">Claim and manage your water monitoring devices</p>
+        
+        <div id="authStatus" class="alert alert-info">
+            Checking authentication...
+        </div>
+        
+        <div id="content" style="display: none;">
+            <!-- Claim New Device Section -->
+            <div class="section">
+                <h2>➕ Claim New Device</h2>
+                <form id="claimForm">
+                    <div class="form-group">
+                        <label for="deviceSecret">Device Secret Code:</label>
+                        <input 
+                            type="text" 
+                            id="deviceSecret" 
+                            placeholder="SALEM2024ABC123" 
+                            required
+                            style="text-transform: uppercase;">
+                        <div class="help-text">
+                            Enter the secret code provided with your ESP32 device
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="deviceName">Device Name (Optional):</label>
+                        <input 
+                            type="text" 
+                            id="deviceName" 
+                            placeholder="Salem District Monitor">
+                        <div class="help-text">
+                            Give your device a friendly name to identify it easily
+                        </div>
+                    </div>
+                    <button type="submit" id="claimButton">Claim Device</button>
+                </form>
+            </div>
+            
+            <!-- My Devices Section -->
+            <div class="section">
+                <h2>📱 My Devices</h2>
+                <div id="myDevicesList" class="loading">
+                    <div class="spinner"></div>
+                    Loading your devices...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let supabase;
+        let currentUser;
+        
+        // Initialize
+        async function init() {
+            // Initialize Supabase
+            const supabaseUrl = window.ENV_CONFIG?.SUPABASE_URL;
+            const supabaseKey = window.ENV_CONFIG?.SUPABASE_ANON_KEY;
+            
+            if (!supabaseUrl || !supabaseKey) {
+                showError('Supabase credentials not found. Make sure env-config.js is loaded.');
+                return;
+            }
+            
+            supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+            
+            // Check authentication
+            const { data: { session } } = await supabase.auth.getSession();
+            
+            if (!session) {
+                document.getElementById('authStatus').innerHTML = `
+                    <div class="alert alert-error">
+                        ❌ You must be logged in to claim devices.
+                        <br><br>
+                        <button onclick="window.location.href='login.html'">Go to Login</button>
+                    </div>
+                `;
+                return;
+            }
+            
+            currentUser = session.user;
+            
+            // Show interface
+            document.getElementById('authStatus').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            
+            // Load user's devices
+            await loadMyDevices();
+            
+            // Setup form handler
+            document.getElementById('claimForm').addEventListener('submit', handleClaimDevice);
+        }
+        
+        // Load user's claimed devices
+        async function loadMyDevices() {
+            const container = document.getElementById('myDevicesList');
+            
+            try {
+                const { data: devices, error } = await supabase
+                    .from('device_registry')
+                    .select('*')
+                    .eq('claimed_by', currentUser.id)
+                    .eq('is_claimed', true)
+                    .order('claimed_at', { ascending: false });
+                
+                if (error) throw error;
+                
+                if (!devices || devices.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon">📦</div>
+                            <p>No devices claimed yet</p>
+                            <p style="font-size: 13px; margin-top: 8px;">
+                                Use the form above to claim your first device
+                            </p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Get reading counts for each device
+                const devicesWithStats = await Promise.all(devices.map(async (device) => {
+                    const { count } = await supabase
+                        .from('sensor_readings')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('device_secret', device.device_secret);
+                    
+                    const { data: latestReading } = await supabase
+                        .from('sensor_readings')
+                        .select('timestamp, status')
+                        .eq('device_secret', device.device_secret)
+                        .order('timestamp', { ascending: false })
+                        .limit(1)
+                        .single();
+                    
+                    return {
+                        ...device,
+                        reading_count: count || 0,
+                        latest_reading: latestReading
+                    };
+                }));
+                
+                // Render devices
+                let html = '';
+                devicesWithStats.forEach(device => {
+                    const claimedDate = new Date(device.claimed_at).toLocaleDateString();
+                    const lastSeen = device.last_seen 
+                        ? new Date(device.last_seen).toLocaleString()
+                        : 'Never';
+                    
+                    const statusBadge = device.latest_reading 
+                        ? `<span class="badge badge-success">${device.latest_reading.status || 'Active'}</span>`
+                        : '<span class="badge badge-warning">No Data Yet</span>';
+                    
+                    html += `
+                        <div class="device-card">
+                            <div class="device-header">
+                                <span class="device-name">${device.device_name || 'Unnamed Device'}</span>
+                                <span class="device-secret">${device.device_secret}</span>
+                            </div>
+                            <div class="device-info">
+                                <div>📍 Location: ${device.latitude?.toFixed(4)}, ${device.longitude?.toFixed(4)}</div>
+                                <div>📅 Claimed: ${claimedDate}</div>
+                                <div>🕐 Last Seen: ${lastSeen}</div>
+                                <div>📊 Readings: ${device.reading_count} | Status: ${statusBadge}</div>
+                                <div>🔧 MAC: ${device.device_mac || 'Unknown'}</div>
+                            </div>
+                            <div class="btn-group" style="margin-top: 12px;">
+                                <button class="btn-small btn-secondary" onclick="viewDevice('${device.device_secret}')">
+                                    View Data
+                                </button>
+                                <button class="btn-small btn-danger" onclick="unclaimDevice('${device.device_secret}')">
+                                    Unclaim
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error loading devices:', error);
+                container.innerHTML = `
+                    <div class="alert alert-error">
+                        ❌ Error loading devices: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // Handle claim device form submission
+        async function handleClaimDevice(e) {
+            e.preventDefault();
+            
+            const secret = document.getElementById('deviceSecret').value.trim().toUpperCase();
+            const name = document.getElementById('deviceName').value.trim();
+            const button = document.getElementById('claimButton');
+            
+            if (!secret) {
+                showError('Please enter a device secret');
+                return;
+            }
+            
+            button.disabled = true;
+            button.textContent = 'Claiming...';
+            
+            try {
+                const { data, error } = await supabase.rpc('claim_device', {
+                    p_device_secret: secret,
+                    p_device_name: name || null
+                });
+                
+                if (error) throw error;
+                
+                if (data && !data.success) {
+                    showError(data.error);
+                    return;
+                }
+                
+                showSuccess('Device claimed successfully! 🎉');
+                
+                // Reset form
+                document.getElementById('claimForm').reset();
+                
+                // Reload devices list
+                await loadMyDevices();
+                
+            } catch (error) {
+                console.error('Claim error:', error);
+                showError('Failed to claim device: ' + error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Claim Device';
+            }
+        }
+        
+        // Unclaim a device
+        async function unclaimDevice(secret) {
+            if (!confirm(`Are you sure you want to unclaim device ${secret}?\n\nYou can reclaim it later using the same secret.`)) {
+                return;
+            }
+            
+            try {
+                const { data, error } = await supabase.rpc('unclaim_device', {
+                    p_device_secret: secret
+                });
+                
+                if (error) throw error;
+                
+                if (data && !data.success) {
+                    showError(data.error);
+                    return;
+                }
+                
+                showSuccess('Device unclaimed successfully');
+                await loadMyDevices();
+                
+            } catch (error) {
+                console.error('Unclaim error:', error);
+                showError('Failed to unclaim device: ' + error.message);
+            }
+        }
+        
+        // View device data (redirect to main dashboard)
+        function viewDevice(secret) {
+            window.location.href = `index.html?device=${secret}`;
+        }
+        
+        // Show success message
+        function showSuccess(message) {
+            const div = document.createElement('div');
+            div.className = 'alert alert-success';
+            div.textContent = '✅ ' + message;
+            document.querySelector('.container').insertBefore(div, document.querySelector('.section'));
+            setTimeout(() => div.remove(), 5000);
+        }
+        
+        // Show error message
+        function showError(message) {
+            const div = document.createElement('div');
+            div.className = 'alert alert-error';
+            div.textContent = '❌ ' + message;
+            document.querySelector('.container').insertBefore(div, document.querySelector('.section'));
+            setTimeout(() => div.remove(), 5000);
+        }
+        
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

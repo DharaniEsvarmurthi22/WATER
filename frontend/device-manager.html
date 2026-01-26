@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Assignment Manager - Admin Only</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="env-config.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 8px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            color: #555;
+            margin-bottom: 5px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #5568d3;
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+        }
+        
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        
+        .alert {
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        th {
+            background: #f8f9fa;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge-admin {
+            background: #667eea;
+            color: white;
+        }
+        
+        .badge-user {
+            background: #48bb78;
+            color: white;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Device Assignment Manager</h1>
+        <p class="subtitle">Admin interface for managing device-to-user assignments (RLS System)</p>
+        
+        <div id="authStatus" class="alert alert-info">
+            Checking authentication...
+        </div>
+        
+        <div id="content" style="display: none;">
+            <!-- Assign New Device -->
+            <div class="section">
+                <h2>➕ Assign Device to User</h2>
+                <form id="assignForm">
+                    <div class="form-group">
+                        <label for="userSelect">Select User:</label>
+                        <select id="userSelect" required>
+                            <option value="">Loading users...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="deviceId">Device ID:</label>
+                        <input type="text" id="deviceId" placeholder="ESP32_SALEM_01" required>
+                        <small style="color: #666;">Must match the device_id sent by ESP32</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="deviceName">Device Name (Optional):</label>
+                        <input type="text" id="deviceName" placeholder="Salem Taluk Monitor">
+                    </div>
+                    <div class="form-group">
+                        <label for="notes">Notes (Optional):</label>
+                        <textarea id="notes" rows="2" placeholder="Deployment notes..."></textarea>
+                    </div>
+                    <button type="submit">Assign Device</button>
+                </form>
+            </div>
+            
+            <!-- Current Assignments -->
+            <div class="section">
+                <h2>📋 Current Device Assignments</h2>
+                <div id="assignmentsList" class="loading">Loading assignments...</div>
+            </div>
+            
+            <!-- Statistics -->
+            <div class="section">
+                <h2>📊 System Statistics</h2>
+                <div id="statistics" class="loading">Loading statistics...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let supabase;
+        let currentUser;
+        
+        // Initialize
+        async function init() {
+            // Initialize Supabase
+            const supabaseUrl = window.ENV_CONFIG?.SUPABASE_URL;
+            const supabaseKey = window.ENV_CONFIG?.SUPABASE_ANON_KEY;
+            
+            if (!supabaseUrl || !supabaseKey) {
+                showError('Supabase credentials not found. Make sure env-config.js is loaded.');
+                return;
+            }
+            
+            supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+            
+            // Check authentication
+            const { data: { session } } = await supabase.auth.getSession();
+            
+            if (!session) {
+                document.getElementById('authStatus').innerHTML = `
+                    <div class="alert alert-error">
+                        ❌ You must be logged in to access this page.
+                        <br><br>
+                        <button onclick="window.location.href='login.html'">Go to Login</button>
+                    </div>
+                `;
+                return;
+            }
+            
+            currentUser = session.user;
+            
+            // Check if user is admin
+            const { data: profile } = await supabase
+                .from('user_profiles')
+                .select('role')
+                .eq('user_id', currentUser.id)
+                .single();
+            
+            if (profile?.role !== 'admin') {
+                document.getElementById('authStatus').innerHTML = `
+                    <div class="alert alert-error">
+                        ❌ Access Denied: Admin privileges required.
+                        <br><br>
+                        <button onclick="window.location.href='index.html'">Go to Dashboard</button>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Admin verified - show interface
+            document.getElementById('authStatus').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            
+            await loadUsers();
+            await loadAssignments();
+            await loadStatistics();
+            
+            // Setup form handler
+            document.getElementById('assignForm').addEventListener('submit', handleAssignDevice);
+        }
+        
+        // Load users for dropdown
+        async function loadUsers() {
+            const { data: users, error } = await supabase
+                .from('user_profiles')
+                .select('user_id, email, role, full_name')
+                .order('email');
+            
+            if (error) {
+                console.error('Error loading users:', error);
+                return;
+            }
+            
+            const select = document.getElementById('userSelect');
+            select.innerHTML = '<option value="">-- Select a user --</option>';
+            
+            users.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.user_id;
+                option.textContent = `${user.full_name || user.email} (${user.role})`;
+                select.appendChild(option);
+            });
+        }
+        
+        // Load current assignments
+        async function loadAssignments() {
+            const { data: assignments, error } = await supabase
+                .from('device_assignments')
+                .select(`
+                    *,
+                    user_profiles!device_assignments_user_id_fkey (email, full_name, role)
+                `)
+                .order('assigned_at', { ascending: false });
+            
+            if (error) {
+                document.getElementById('assignmentsList').innerHTML = `
+                    <div class="alert alert-error">Error loading assignments: ${error.message}</div>
+                `;
+                return;
+            }
+            
+            if (assignments.length === 0) {
+                document.getElementById('assignmentsList').innerHTML = `
+                    <div class="alert alert-info">No device assignments yet. Use the form above to assign devices.</div>
+                `;
+                return;
+            }
+            
+            let html = '<table><thead><tr>';
+            html += '<th>Device ID</th><th>Device Name</th><th>Assigned To</th><th>Assigned Date</th><th>Actions</th>';
+            html += '</tr></thead><tbody>';
+            
+            assignments.forEach(assignment => {
+                const user = assignment.user_profiles;
+                const userName = user.full_name || user.email;
+                const userRole = user.role;
+                const assignedDate = new Date(assignment.assigned_at).toLocaleString();
+                
+                html += '<tr>';
+                html += `<td><span class="code">${assignment.device_id}</span></td>`;
+                html += `<td>${assignment.device_name || '<em>Not set</em>'}</td>`;
+                html += `<td>${userName} <span class="badge badge-${userRole}">${userRole}</span></td>`;
+                html += `<td>${assignedDate}</td>`;
+                html += `<td class="actions">
+                    <button class="btn-sm btn-danger" onclick="unassignDevice('${assignment.device_id}')">Remove</button>
+                </td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('assignmentsList').innerHTML = html;
+        }
+        
+        // Load statistics
+        async function loadStatistics() {
+            // Count devices per user
+            const { data: assignments } = await supabase
+                .from('device_assignments')
+                .select('user_id');
+            
+            // Count readings per device
+            const { data: readings } = await supabase
+                .from('sensor_readings')
+                .select('device_id');
+            
+            const uniqueUsers = new Set(assignments?.map(a => a.user_id) || []).size;
+            const totalDevices = assignments?.length || 0;
+            const totalReadings = readings?.length || 0;
+            const devicesWithData = new Set(readings?.map(r => r.device_id) || []).size;
+            
+            document.getElementById('statistics').innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 6px;">
+                        <div style="font-size: 32px; font-weight: bold; color: #667eea;">${totalDevices}</div>
+                        <div style="color: #666;">Total Devices</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 6px;">
+                        <div style="font-size: 32px; font-weight: bold; color: #48bb78;">${uniqueUsers}</div>
+                        <div style="color: #666;">Users with Devices</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 6px;">
+                        <div style="font-size: 32px; font-weight: bold; color: #f59e0b;">${devicesWithData}</div>
+                        <div style="color: #666;">Devices with Data</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 6px;">
+                        <div style="font-size: 32px; font-weight: bold; color: #8b5cf6;">${totalReadings}</div>
+                        <div style="color: #666;">Total Readings</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Handle assign device form submission
+        async function handleAssignDevice(e) {
+            e.preventDefault();
+            
+            const userId = document.getElementById('userSelect').value;
+            const deviceId = document.getElementById('deviceId').value.trim();
+            const deviceName = document.getElementById('deviceName').value.trim();
+            const notes = document.getElementById('notes').value.trim();
+            
+            if (!userId || !deviceId) {
+                alert('Please select a user and enter a device ID');
+                return;
+            }
+            
+            // Call the assign_device_to_user function
+            const { data, error } = await supabase.rpc('assign_device_to_user', {
+                p_user_id: userId,
+                p_device_id: deviceId,
+                p_device_name: deviceName || null,
+                p_notes: notes || null
+            });
+            
+            if (error) {
+                showError(`Error assigning device: ${error.message}`);
+                return;
+            }
+            
+            if (data && !data.success) {
+                showError(`Assignment failed: ${data.error}`);
+                return;
+            }
+            
+            showSuccess(`Device ${deviceId} assigned successfully!`);
+            
+            // Reset form
+            document.getElementById('assignForm').reset();
+            
+            // Reload assignments
+            await loadAssignments();
+            await loadStatistics();
+        }
+        
+        // Unassign a device
+        async function unassignDevice(deviceId) {
+            if (!confirm(`Are you sure you want to remove the assignment for device ${deviceId}?`)) {
+                return;
+            }
+            
+            const { data, error } = await supabase.rpc('unassign_device', {
+                p_device_id: deviceId
+            });
+            
+            if (error) {
+                showError(`Error removing assignment: ${error.message}`);
+                return;
+            }
+            
+            if (data && !data.success) {
+                showError(`Removal failed: ${data.error}`);
+                return;
+            }
+            
+            showSuccess(`Device ${deviceId} unassigned successfully!`);
+            
+            // Reload assignments
+            await loadAssignments();
+            await loadStatistics();
+        }
+        
+        // Show success message
+        function showSuccess(message) {
+            const div = document.createElement('div');
+            div.className = 'alert alert-success';
+            div.textContent = '✅ ' + message;
+            document.querySelector('.container').insertBefore(div, document.querySelector('.section'));
+            setTimeout(() => div.remove(), 5000);
+        }
+        
+        // Show error message
+        function showError(message) {
+            const div = document.createElement('div');
+            div.className = 'alert alert-error';
+            div.textContent = '❌ ' + message;
+            document.querySelector('.container').insertBefore(div, document.querySelector('.section'));
+            setTimeout(() => div.remove(), 5000);
+        }
+        
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

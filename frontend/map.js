@@ -8,6 +8,7 @@ class MapManager {
         this.heatmapLayer = null;
         this.colorscaleManager = null;  // Will be initialized after map loads
         this.overlayConfig = window.OVERLAY_CONFIG || { autoLoad: false, overlays: [] };
+        this.lastClickedLocation = null;  // Track last clicked location for dashboard
         this.layersVisible = {
             sensors: true,
             heatmap: false,
@@ -15,13 +16,13 @@ class MapManager {
         };
 
         this.villages = {
-            coimbatore: [
-                { name: 'Ukkadam', coords: [76.9558, 10.9987], id: 'ukkadam' },
-                { name: 'Singanallur', coords: [77.0011, 10.9835], id: 'singanallur' }
-            ],
-            chennai: [
-                { name: 'Red Hills', coords: [80.1167, 13.1594], id: 'redhills' },
-                { name: 'Porur', coords: [80.1564, 13.0358], id: 'porur' }
+            salem: [
+                { name: 'Salem South', coords: [78.1460, 11.6643], id: 'salemsouth' },
+                { name: 'Yercaud', coords: [78.2067, 11.7778], id: 'yercaud' },
+                { name: 'Sankari', coords: [77.8833, 11.4833], id: 'sankari' },
+                { name: 'Edappadi', coords: [77.8167, 11.6833], id: 'edappadi' },
+                { name: 'Omalur', coords: [78.0333, 11.7333], id: 'omalur' },
+                { name: 'Mettur', coords: [77.8000, 11.7833], id: 'mettur' }
             ]
         };
 
@@ -108,11 +109,11 @@ class MapManager {
 
                     // Determine file type and load
                     if (overlay.file.endsWith('.kml')) {
-                        await this.loadKML(text, overlay.name);
+                        await this.loadKML(text, overlay.name, overlay.id || overlay.overlayId);
                         console.log(`✅ Loaded KML: ${overlay.name} (${overlay.source})`);
                     } else if (overlay.file.endsWith('.geojson') || overlay.file.endsWith('.json')) {
                         const geojson = JSON.parse(text);
-                        await this.loadGeoJSON(geojson, overlay.name);
+                        await this.loadGeoJSON(geojson, overlay.name, overlay.id || overlay.overlayId);
                         console.log(`✅ Loaded GeoJSON: ${overlay.name} (${overlay.source})`);
                     }
                 } else {
@@ -480,7 +481,7 @@ class MapManager {
             });
         }
 
-        // File upload with tracking
+        // File upload with database storage and device linking
         this.uploadedFiles = []; // Track uploaded files
         const fileUpload = document.getElementById('fileUpload');
         if (fileUpload) {
@@ -488,27 +489,107 @@ class MapManager {
                 const files = e.target.files;
                 for (let file of files) {
                     try {
-                        const text = await file.text();
-                        const fileInfo = {
-                            name: file.name,
-                            layerIds: [], // Will store layer IDs created from this file
-                            timestamp: Date.now()
-                        };
-
-                        if (file.name.endsWith('.kml')) {
-                            const layerIds = await this.loadKML(text, file.name);
-                            fileInfo.layerIds = layerIds;
-                        } else if (file.name.endsWith('.geojson') || file.name.endsWith('.json')) {
-                            const layerIds = await this.loadGeoJSON(JSON.parse(text), file.name);
-                            fileInfo.layerIds = layerIds;
+                        // Get current user
+                        const authManager = window.authManager;
+                        if (!authManager || !authManager.currentUser) {
+                            this.showError('Please login to upload files');
+                            continue;
+                        }
+                        
+                        const userId = authManager.currentUser.id;
+                        const supaClient = authManager.getSupabaseClient();
+                        
+                        if (!supaClient) {
+                            this.showError('Supabase client not available');
+                            continue;
                         }
 
-                        this.uploadedFiles.push(fileInfo);
-                        this.updateUploadedFilesList();
-                        this.showSuccess(`${file.name} loaded`);
+                        // Show uploading message
+                        this.showSuccess(`Uploading ${file.name}...`);
+
+                        // 1. Upload file to Supabase Storage
+                        const timestamp = Date.now();
+                        const storagePath = `${userId}/${timestamp}_${file.name}`;
+                        
+                        const { data: uploadData, error: uploadError } = await supaClient.storage
+                            .from('kml-overlays')
+                            .upload(storagePath, file, {
+                                contentType: file.name.endsWith('.kml') ? 'application/vnd.google-earth.kml+xml' : 'application/json',
+                                upsert: false
+                            });
+
+                        if (uploadError) {
+                            console.error('Storage upload error:', uploadError);
+                            this.showError(`Upload failed: ${uploadError.message}`);
+                            continue;
+                        }
+
+                        console.log('✅ File uploaded to storage:', uploadData.path);
+
+                        // 2. Create database record
+                        const overlayName = file.name.replace(/\.[^/.]+$/, "");
+                        
+                        const { data: kmlRecord, error: dbError } = await supaClient
+                            .from('kml_overlays')
+                            .insert({
+                                name: overlayName,
+                                file_name: file.name,
+                                storage_path: uploadData.path,
+                                owner_user_id: userId,
+                                enabled: true
+                            })
+                            .select()
+                            .single();
+
+                        if (dbError) {
+                            console.error('Database insert error:', dbError);
+                            this.showError(`Database error: ${dbError.message}`);
+                            continue;
+                        }
+
+                        console.log('✅ KML record created:', kmlRecord);
+
+                        // 3. Load the KML file to map immediately
+                        const text = await file.text();
+                        if (file.name.endsWith('.kml')) {
+                            await this.loadKML(text, file.name);
+                        } else if (file.name.endsWith('.geojson') || file.name.endsWith('.json')) {
+                            await this.loadGeoJSON(JSON.parse(text), file.name);
+                        }
+
+                        this.showSuccess(`${file.name} uploaded and saved!`);
+
+                        // 4. Show device linking popup
+                        if (window.showDeviceLinkPopup) {
+                            window.showDeviceLinkPopup(kmlRecord.id, kmlRecord.name);
+                        }
+
+                        // 5. Refresh the overlays list
+                        if (window.authManager && window.authManager.currentUser) {
+                            const currentUserId = window.authManager.currentUser.id;
+                            const profile = window.authManager.userProfile;
+                            
+                            if (profile && profile.role === 'admin') {
+                                // Admin view - refresh current selected user
+                                const adminSelect = document.getElementById('adminUserSelect');
+                                if (adminSelect && adminSelect.value) {
+                                    const selectedUserId = adminSelect.value;
+                                    if (window.renderOverlaysForUser) {
+                                        await window.renderOverlaysForUser(selectedUserId);
+                                    }
+                                }
+                            } else {
+                                // Regular user - refresh own overlays
+                                if (window.renderOverlaysForUser) {
+                                    console.log('🔄 Refreshing overlays for user:', currentUserId);
+                                    await window.renderOverlaysForUser(currentUserId);
+                                }
+                            }
+                        }
+
                     } catch (error) {
                         console.error('File upload error:', error);
-                        this.showError(`Failed to load ${file.name}`);
+                        this.showError(`Failed to load ${file.name}: ${error.message}`);
                     }
                 }
                 fileUpload.value = '';
@@ -745,8 +826,11 @@ class MapManager {
             .addTo(this.map);
 
         el.addEventListener('click', () => {
-            this.saveMapState();
-            window.location.href = `location.html?location=${locationId}`;
+            this.lastClickedLocation = locationId;  // Store for dashboard button
+            console.log('📍 Marker clicked:', locationId);
+            
+            // Show location details in sidebar instead of navigating
+            this.showLocationDetails(locationId);
         });
 
         const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
@@ -762,6 +846,28 @@ class MapManager {
 
         marker.setPopup(popup);
         this.markers.push(marker);
+    }
+
+    // Show location details in sidebar (instead of navigating to location.html)
+    showLocationDetails(locationId) {
+        console.log('📊 Showing details for:', locationId);
+        
+        // Update the stats location filter to show this specific location
+        const statsFilter = document.getElementById('statsLocationFilter');
+        if (statsFilter) {
+            statsFilter.value = locationId;
+            // Trigger change event to update statistics
+            statsFilter.dispatchEvent(new Event('change'));
+        }
+        
+        // Update the readings location filter
+        const readingsFilter = document.getElementById('locationFilter');
+        if (readingsFilter) {
+            readingsFilter.value = locationId;
+            readingsFilter.dispatchEvent(new Event('change'));
+        }
+        
+        console.log('✅ Location details updated in sidebar');
     }
 
     // Public method to update marker color by location ID
@@ -792,8 +898,8 @@ class MapManager {
         return `rgb(${darken(r)}, ${darken(g)}, ${darken(b)})`;
     }
 
-    async loadKML(kmlText, fileName) {
-        console.log(`🔄 Converting KML to GeoJSON: ${fileName}`);
+    async loadKML(kmlText, fileName, overlayId = null) {
+        console.log(`🔄 Converting KML to GeoJSON: ${fileName}, overlayId: ${overlayId}`);
         const parser = new DOMParser();
         const kml = parser.parseFromString(kmlText, 'text/xml');
 
@@ -809,15 +915,15 @@ class MapManager {
         console.log('📍 GeoJSON data:', JSON.stringify(geojson, null, 2));
 
         if (geojson.features && geojson.features.length > 0) {
-            return await this.loadGeoJSON(geojson, fileName);
+            return await this.loadGeoJSON(geojson, fileName, overlayId);
         } else {
             console.error('❌ No features found in KML file');
             return [];
         }
     }
 
-    async loadGeoJSON(geojson, fileName) {
-        console.log(`📥 Loading GeoJSON: ${fileName}`);
+    async loadGeoJSON(geojson, fileName, overlayId = null) {
+        console.log(`📥 Loading GeoJSON: ${fileName}, overlayId: ${overlayId}`);
         const layerId = `layer-${Date.now()}`;
         const sourceId = `source-${Date.now()}`;
         const createdLayerIds = [];
@@ -937,23 +1043,92 @@ class MapManager {
 
                 console.log(`🟢 Adding polygon layer: ${polyLayerId}`);
 
-                // Define village colors (matching Andhra Pradesh district map style)
-                const villageColors = [
-                    '#22c55e', // Green (Nallampatti)
-                    '#f97316', // Orange (Poolampatti)
-                    '#3b82f6', // Blue (Thumbalpatti)
-                    '#a855f7', // Purple (Karipatti)
-                    '#eab308', // Yellow (Mallamooppampatti)
-                    '#ef4444', // Red
-                    '#06b6d4', // Cyan
-                    '#ec4899', // Pink
-                    '#84cc16', // Lime
-                    '#f59e0b'  // Amber
-                ];
+                // Fetch latest sensor data to apply color scale
+                let sensorDataMap = {};
+                if (window.getSupabaseClient) {
+                    const client = window.getSupabaseClient();
+                    if (client) {
+                        try {
+                            // ⭐ Get user's linked devices first
+                            let linkedDevices = null;
+                            if (typeof window.getUserLinkedDevices === 'function') {
+                                linkedDevices = await window.getUserLinkedDevices();
+                                console.log('🔒 Map polygon colors filtering by linked devices:', linkedDevices);
+                            }
+                            
+                            // Build query with device filter
+                            let query = client
+                                .from('sensor_readings')
+                                .select('sensor_id, value, timestamp, device_name');
+                            
+                            // Filter by linked devices if available
+                            if (linkedDevices && linkedDevices.length > 0) {
+                                query = query.in('device_name', linkedDevices);
+                            } else if (linkedDevices && linkedDevices.length === 0) {
+                                console.warn('⚠️ User has no linked devices - polygons will not be colored');
+                                sensorDataMap = {};
+                            } else {
+                                // No filtering (admin or not logged in)
+                                const { data: latestReadings } = await query
+                                    .order('timestamp', { ascending: false })
+                                    .limit(500);
+                                
+                                if (latestReadings) {
+                                    latestReadings.forEach(r => {
+                                        const locationId = r.sensor_id.split('_')[0];
+                                        if (!sensorDataMap[locationId] || new Date(r.timestamp) > new Date(sensorDataMap[locationId].timestamp)) {
+                                            sensorDataMap[locationId] = r;
+                                        }
+                                    });
+                                    console.log('📊 Sensor data map for coloring:', sensorDataMap);
+                                }
+                            }
+                            
+                            // Only fetch if we have linked devices or no filter
+                            if (!linkedDevices || linkedDevices.length > 0) {
+                                const { data: latestReadings } = await query
+                                    .order('timestamp', { ascending: false })
+                                    .limit(500);
+                                
+                                if (latestReadings) {
+                                    latestReadings.forEach(r => {
+                                        const locationId = r.sensor_id.split('_')[0];
+                                        if (!sensorDataMap[locationId] || new Date(r.timestamp) > new Date(sensorDataMap[locationId].timestamp)) {
+                                            sensorDataMap[locationId] = r;
+                                        }
+                                    });
+                                    console.log('📊 Sensor data map for coloring:', sensorDataMap);
+                                }
+                            }
+                        } catch (err) {
+                            console.warn('⚠️ Could not fetch sensor data for coloring:', err);
+                        }
+                    }
+                }
 
-                // Assign colors to each polygon feature
+                // Assign colors based on sensor values
                 polygons.forEach((feature, index) => {
-                    feature.properties.fillColor = villageColors[index % villageColors.length];
+                    const name = (feature.properties.name || feature.properties.Name || '').toLowerCase();
+                    const sensorData = sensorDataMap[name];
+                    
+                    // Color based on pH if available
+                    if (sensorData && sensorData.sensor_id.includes('_ph')) {
+                        const ph = sensorData.value;
+                        if (ph < 6.5) feature.properties.fillColor = '#ef4444'; // Red - acidic
+                        else if (ph < 7.0) feature.properties.fillColor = '#f59e0b'; // Orange
+                        else if (ph < 7.5) feature.properties.fillColor = '#84cc16'; // Yellow-green
+                        else if (ph < 8.5) feature.properties.fillColor = '#10b981'; // Green - good
+                        else if (ph < 9.0) feature.properties.fillColor = '#3b82f6'; // Blue
+                        else feature.properties.fillColor = '#8b5cf6'; // Purple
+                    } else {
+                        // Default colors
+                        const colors = ['#22c55e', '#f97316', '#3b82f6', '#a855f7', '#eab308', '#ef4444', '#06b6d4', '#ec4899'];
+                        feature.properties.fillColor = colors[index % colors.length];
+                    }
+                    
+                    if (overlayId) {
+                        feature.properties.kmlOverlayId = overlayId;
+                    }
                 });
 
                 this.map.addSource(polySourceId, {
@@ -989,8 +1164,14 @@ class MapManager {
                             const locationId = name.toLowerCase().replace(/\s+/g, '');
                             console.log(`🎯 KML polygon clicked: "${name}" → location_id: ${locationId}`);
 
-                            // Show dynamic popup with current sensor data
-                            await this.showDynamicPopup(e.lngLat, locationId, feature.properties);
+                            // Pass KML overlay ID if available (stored in feature properties)
+                            const kmlOverlayId = feature.properties.kmlOverlayId || feature.properties.overlay_id;
+                            
+                            // Show dynamic popup with current sensor data and device data
+                            await this.showDynamicPopup(e.lngLat, locationId, { 
+                                ...feature.properties,
+                                kmlOverlayId: kmlOverlayId
+                            });
                         } else {
                             console.warn('⚠️ No name property found in feature');
                         }
@@ -1038,21 +1219,192 @@ class MapManager {
     }
 
     /**
+     * Show popup using local window.allReadings data (fallback when Supabase unavailable)
+     */
+    showPopupFromLocalData(locationId, lngLat) {
+        console.log(`📊 Building popup from local data for: ${locationId}`);
+        
+        const sensorTypes = ['ph', 'turbidity', 'temperature', 'tds'];
+        const readings = {};
+        
+        // Filter readings for this location
+        sensorTypes.forEach(type => {
+            const sensorId = `${locationId}_${type}`;
+            const sensorReadings = window.allReadings.filter(r => r.sensor_id === sensorId);
+            
+            if (sensorReadings.length > 0) {
+                // Get latest reading
+                const latest = sensorReadings[0];
+                // Calculate average
+                const avg = sensorReadings.reduce((sum, r) => sum + parseFloat(r.value), 0) / sensorReadings.length;
+                
+                readings[type] = {
+                    current: parseFloat(latest.value),
+                    average: avg,
+                    timestamp: latest.timestamp,
+                    rssi: latest.rssi
+                };
+            }
+        });
+        
+        // Build HTML with compact design
+        const locationName = locationId.charAt(0).toUpperCase() + locationId.slice(1);
+        let html = `
+            <div style="min-width: 300px; font-family: system-ui, -apple-system, sans-serif;">
+                <!-- Header -->
+                <div style="background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%); color: white; padding: 12px 16px; margin: -15px -15px 12px -15px; border-radius: 8px 8px 0 0;">
+                    <h3 style="margin: 0; font-size: 18px; font-weight: 600;">📍 ${locationName}</h3>
+                    <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;">Water Quality Monitoring Station</p>
+                </div>
+        `;
+        
+        const sensorInfo = {
+            'ph': { name: 'pH Level', unit: '', icon: '💧', color: '#3b82f6' },
+            'turbidity': { name: 'Turbidity', unit: 'NTU', icon: '🌊', color: '#10b981' },
+            'temperature': { name: 'Temperature', unit: '°C', icon: '🌡️', color: '#f59e0b' },
+            'tds': { name: 'TDS', unit: 'ppm', icon: '⚡', color: '#8b5cf6' }
+        };
+        
+        if (Object.keys(readings).length > 0) {
+            html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">';
+            
+            Object.entries(readings).forEach(([type, data]) => {
+                const info = sensorInfo[type];
+                const isNormal = this.checkSensorValue(type, data.current);
+                const statusColor = isNormal ? '#10b981' : '#ef4444';
+                
+                html += `
+                    <div style="background: #f8fafc; border-left: 3px solid ${info.color}; padding: 8px; border-radius: 4px;">
+                        <div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">${info.icon} ${info.name}</div>
+                        <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 2px;">${data.current.toFixed(2)}<span style="font-size: 11px; font-weight: 400; color: #64748b;"> ${info.unit}</span></div>
+                        <div style="font-size: 10px; color: #94a3b8;">Avg: ${data.average.toFixed(2)} ${info.unit}</div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            // Status indicator
+            const latestReading = Object.values(readings)[0];
+            html += `
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #f1f5f9; border-radius: 4px; margin-bottom: 12px; font-size: 11px;">
+                    <span style="color: #64748b;">
+                        <span style="display: inline-block; width: 6px; height: 6px; background: #10b981; border-radius: 50%; margin-right: 6px;"></span>
+                        Last updated: ${new Date(latestReading.timestamp).toLocaleString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                        })}
+                    </span>
+                    ${latestReading.rssi ? `<span style="color: #94a3b8;">📶 ${latestReading.rssi} dBm</span>` : ''}
+                </div>
+            `;
+            
+            // View Dashboard Button
+            html += `
+                <button onclick="window.viewLocationDashboard('${locationId}')" 
+                    style="width: 100%; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; padding: 10px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
+                    onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 12px rgba(59, 130, 246, 0.4)';"
+                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                    <span style="font-size: 16px;">📊</span>
+                    View Complete Dashboard
+                </button>
+            `;
+        } else {
+            html += `
+                <div style="text-align: center; padding: 20px; color: #64748b;">
+                    <div style="font-size: 32px; margin-bottom: 8px;">📊</div>
+                    <p style="margin: 0; font-size: 14px;">No sensor data available</p>
+                    <p style="margin: 4px 0 0 0; font-size: 12px;">Data will appear once sensors start transmitting</p>
+                </div>
+            `;
+        }
+        
+        html += `</div>`;
+        
+        new mapboxgl.Popup({ closeButton: true, closeOnClick: false })
+            .setLngLat(lngLat)
+            .setHTML(html)
+            .addTo(this.map);
+            
+        console.log(`✅ Popup created from local data`);
+    }
+    
+    /**
+     * Check if sensor value is within normal range
+     */
+    checkSensorValue(type, value) {
+        const ranges = {
+            'ph': { min: 6.5, max: 8.5 },
+            'turbidity': { min: 0, max: 5 },
+            'temperature': { min: 22, max: 32 },
+            'tds': { min: 150, max: 2000 }
+        };
+        
+        const range = ranges[type];
+        if (!range) return true;
+        
+        return value >= range.min && value <= range.max;
+    }
+
+    /**
      * Show dynamic popup with live sensor data
      * Fetches popup config and current sensor readings from database
+     * Also displays device data if a device is linked to this KML overlay
      */
     async showDynamicPopup(lngLat, locationId, kmlProperties = {}) {
         try {
             console.log(`📊 Building dynamic popup for: ${locationId}`);
 
-            // Get Supabase client
-            console.log(`🔍 Checking for getSupabaseClient...`, typeof window.getSupabaseClient);
-            const supabase = window.getSupabaseClient ? window.getSupabaseClient() : null;
-            console.log(`🔍 Supabase client:`, supabase);
+            // Get or create Supabase client
+            let supabase = null;
+            
+            // Try getting from data.js first
+            if (window.getSupabaseClient) {
+                supabase = window.getSupabaseClient();
+                if (supabase) {
+                    console.log(`✅ Got Supabase client from data.js`);
+                } else {
+                    console.warn(`⚠️ getSupabaseClient() returned null`);
+                }
+            }
+            
+            // If not available, try using the global supabase from CDN
+            if (!supabase && typeof window.supabase !== 'undefined' && window.ENV_CONFIG) {
+                console.log(`🔧 Creating Supabase client directly in popup`);
+                console.log('   window.supabase type:', typeof window.supabase);
+                console.log('   window.supabase.createClient:', typeof window.supabase?.createClient);
+                
+                try {
+                    // The CDN exposes it as window.supabase.createClient
+                    if (typeof window.supabase.createClient === 'function') {
+                        supabase = window.supabase.createClient(
+                            window.ENV_CONFIG.SUPABASE_URL,
+                            window.ENV_CONFIG.SUPABASE_ANON_KEY
+                        );
+                        console.log(`✅ Supabase client created successfully`);
+                    } else {
+                        console.error('❌ window.supabase.createClient is not a function');
+                    }
+                } catch (err) {
+                    console.error('❌ Error creating Supabase client:', err);
+                }
+            }
 
             if (!supabase) {
-                console.error('❌ Supabase client not available');
-                console.error('   window.getSupabaseClient exists?', !!window.getSupabaseClient);
+                console.error('❌ Cannot create Supabase client - using window.allReadings fallback');
+                console.error('   window.supabase:', typeof window.supabase);
+                console.error('   window.ENV_CONFIG:', window.ENV_CONFIG);
+                console.error('   window.allReadings available:', window.allReadings?.length || 0);
+                
+                // Use window.allReadings as fallback
+                if (window.allReadings && window.allReadings.length > 0) {
+                    console.log('📊 Using window.allReadings fallback for popup');
+                    this.showPopupFromLocalData(locationId, lngLat);
+                    return;
+                }
+                
                 // Show basic popup without database data
                 new mapboxgl.Popup()
                     .setLngLat(lngLat)
@@ -1067,7 +1419,15 @@ class MapManager {
                 return;
             }
 
-            console.log(`✅ Supabase client retrieved successfully`);
+            // Check if there's a device linked to this KML region (by matching name/location)
+            let deviceData = null;
+            if (kmlProperties.kmlOverlayId && window.getDeviceDataForKML) {
+                console.log(`🔍 Checking for linked device to KML overlay: ${kmlProperties.kmlOverlayId}`);
+                deviceData = await window.getDeviceDataForKML(kmlProperties.kmlOverlayId);
+                if (deviceData && deviceData.hasData) {
+                    console.log(`✅ Found linked device data:`, deviceData);
+                }
+            }
 
             // Fetch popup configuration from database
             const { data: popupConfig, error: configError } = await supabase
@@ -1076,21 +1436,25 @@ class MapManager {
                 .eq('location_id', locationId)
                 .single();
 
-            if (configError) {
+            if (configError && configError.code !== 'PGRST116') {
                 console.warn('⚠️ No popup config found, using defaults:', configError.message);
             }
 
-            // Fetch location details
+            // Try to fetch location details from database, but don't fail if not found
             const { data: location, error: locationError } = await supabase
                 .from('locations')
                 .select('*')
                 .eq('location_id', locationId)
                 .single();
 
-            if (locationError) {
-                console.error('❌ Location not found:', locationError);
-                return;
-            }
+            // Create default location if not in database (for ESP32 direct data)
+            const locationData = location || {
+                location_id: locationId,
+                name: locationId.charAt(0).toUpperCase() + locationId.slice(1),
+                description: `Water monitoring location`
+            };
+
+            console.log('📍 Location data:', locationData);
 
             // Fetch latest sensor readings
             let sensorsToShow = popupConfig?.show_sensors;
@@ -1102,21 +1466,52 @@ class MapManager {
                 sensorsToShow = ['ph', 'turbidity', 'temperature', 'tds'];
             }
 
+            // ⭐ Get user's linked devices for filtering
+            let linkedDevices = null;
+            if (typeof window.getUserLinkedDevices === 'function') {
+                linkedDevices = await window.getUserLinkedDevices();
+                console.log('🔒 Popup data filtering by linked devices:', linkedDevices);
+            }
+
             const sensorPromises = sensorsToShow.map(async (sensorType) => {
                 const sensorId = `${locationId}_${sensorType}`;
-                console.log(`📡 Fetching sensor: ${sensorId}`);
+                console.log(`📡 ========== Fetching sensor: ${sensorId} ==========`);
 
-                // Fetch latest reading (recent value)
-                const { data: latestData, error: latestError } = await supabase
+                // Fetch latest reading (recent value) - NO TIME FILTER
+                console.log(`   Step 1: Fetching LATEST reading (no time filter)`);
+                
+                // Build query with device filter
+                let latestQuery = supabase
                     .from('sensor_readings')
-                    .select('value, timestamp')
-                    .eq('sensor_id', sensorId)
+                    .select('value, timestamp, device_name')
+                    .eq('sensor_id', sensorId);
+                
+                // Apply device filter if available
+                if (linkedDevices && linkedDevices.length > 0) {
+                    latestQuery = latestQuery.in('device_name', linkedDevices);
+                } else if (linkedDevices && linkedDevices.length === 0) {
+                    // User has no linked devices
+                    console.warn('⚠️ User has no linked devices - no sensor data');
+                    return null;
+                }
+                
+                const { data: latestData, error: latestError } = await latestQuery
                     .order('timestamp', { ascending: false })
                     .limit(1)
                     .single();
 
+                console.log(`   Latest query result:`, latestData);
+                console.log(`   Latest query error:`, latestError);
+
                 if (latestError && latestError.code !== 'PGRST116') {
                     console.warn(`⚠️ Error fetching latest ${sensorId}:`, latestError);
+                }
+
+                // If we have a latest reading, show when it was taken
+                if (latestData) {
+                    const age = Date.now() - new Date(latestData.timestamp).getTime();
+                    const ageHours = (age / (1000 * 60 * 60)).toFixed(1);
+                    console.log(`   ✅ Latest value: ${latestData.value} (${ageHours} hours ago)`);
                 }
 
                 // Fetch average value based on color scale time interval
@@ -1134,14 +1529,30 @@ class MapManager {
                 };
                 const timeThreshold = timeThresholds[timeInterval];
 
-                console.log(`📊 Fetching average for ${sensorId} over ${timeInterval}`);
+                console.log(`   Step 2: Fetching AVERAGE for ${sensorId} over ${timeInterval}`);
+                console.log(`   Time threshold: ${timeThreshold.toISOString()}`);
+                console.log(`   Current time: ${now.toISOString()}`);
 
-                const { data: avgData, error: avgError } = await supabase
+                // Build average query with device filter
+                let avgQuery = supabase
                     .from('sensor_readings')
-                    .select('value')
+                    .select('value, timestamp')
                     .eq('sensor_id', sensorId)
-                    .gte('timestamp', timeThreshold.toISOString())
+                    .gte('timestamp', timeThreshold.toISOString());
+                
+                // Apply device filter if available
+                if (linkedDevices && linkedDevices.length > 0) {
+                    avgQuery = avgQuery.in('device_name', linkedDevices);
+                }
+                
+                const { data: avgData, error: avgError } = await avgQuery
                     .order('timestamp', { ascending: false });
+
+                console.log(`   Avg query returned ${avgData?.length || 0} readings`);
+                console.log(`   Avg query error:`, avgError);
+                if (avgData && avgData.length > 0) {
+                    console.log(`   Sample timestamps:`, avgData.slice(0, 3).map(r => r.timestamp));
+                }
 
                 let avgValue = 'N/A';
                 let readingCount = 0;
@@ -1151,7 +1562,32 @@ class MapManager {
                     readingCount = avgData.length;
                     console.log(`   ✅ Average: ${avgValue} (${readingCount} readings)`);
                 } else {
-                    console.log(`   ⚠️ No data found for ${timeInterval}`);
+                    console.log(`   ⚠️ No data found within ${timeInterval}`);
+                    // Try querying without time filter to see if any data exists
+                    console.log(`   Step 3: Checking if ANY data exists for ${sensorId}`);
+                    
+                    // Build fallback query with device filter
+                    let fallbackQuery = supabase
+                        .from('sensor_readings')
+                        .select('value, timestamp')
+                        .eq('sensor_id', sensorId);
+                    
+                    // Apply device filter if available
+                    if (linkedDevices && linkedDevices.length > 0) {
+                        fallbackQuery = fallbackQuery.in('device_name', linkedDevices);
+                    }
+                    
+                    const { data: allData } = await fallbackQuery
+                        .order('timestamp', { ascending: false })
+                        .limit(5);
+                    console.log(`   All-time data (last 5):`, allData);
+                    
+                    // Use latest value for average if no data in time range
+                    if (latestData) {
+                        avgValue = parseFloat(latestData.value).toFixed(2);
+                        readingCount = 1;
+                        console.log(`   ℹ️ Using latest value as fallback: ${avgValue}`);
+                    }
                 }
 
                 return {
@@ -1166,12 +1602,13 @@ class MapManager {
 
             const sensorReadings = await Promise.all(sensorPromises);
 
-            // Build popup HTML
+            // Build popup HTML with device data if available
             const popupHTML = this.buildPopupHTML(
-                location,
+                locationData,
                 popupConfig,
                 sensorReadings,
-                kmlProperties
+                kmlProperties,
+                deviceData  // Pass device data to popup builder
             );
 
             // Create and show popup
@@ -1192,12 +1629,59 @@ class MapManager {
     /**
      * Build HTML for dynamic popup
      */
-    buildPopupHTML(location, popupConfig, sensorReadings, kmlProperties) {
+    buildPopupHTML(location, popupConfig, sensorReadings, kmlProperties, deviceData = null) {
         const title = popupConfig?.popup_title || location.name;
         const description = popupConfig?.popup_description || '';
         const customFields = popupConfig?.custom_fields || {};
         const showLastUpdated = popupConfig?.show_last_updated !== false;
         const showViewButton = popupConfig?.show_view_button !== false;
+
+        // Device info section (if device is linked)
+        let deviceInfoHTML = '';
+        if (deviceData && deviceData.hasData) {
+            deviceInfoHTML = `
+                <div class="popup-device-section" style="background: #f0f9ff; border: 2px solid #0ea5e9; border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 18px; margin-right: 6px;">🔗</span>
+                        <span style="font-weight: bold; color: #0369a1; font-size: 14px;">Linked Device</span>
+                    </div>
+                    <div style="font-size: 12px; color: #0c4a6e; margin-bottom: 8px;">
+                        <strong>Device ID:</strong> ${deviceData.deviceId}
+                    </div>
+            `;
+            
+            // Display latest device sensor readings
+            if (deviceData.sensors && Object.keys(deviceData.sensors).length > 0) {
+                deviceInfoHTML += '<div style="font-size: 11px; color: #075985; margin-top: 6px;"><strong>Latest Readings:</strong></div>';
+                for (const [sensorId, reading] of Object.entries(deviceData.sensors)) {
+                    const timestamp = new Date(reading.timestamp);
+                    const timeAgo = this.getTimeAgo(timestamp);
+                    deviceInfoHTML += `
+                        <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 3px 0; color: #0c4a6e;">
+                            <span>${sensorId}:</span>
+                            <span style="font-weight: bold; color: #0ea5e9;">${reading.value} ${reading.unit || ''}</span>
+                        </div>
+                    `;
+                }
+                deviceInfoHTML += `<div style="font-size: 10px; color: #64748b; margin-top: 4px;">Updated: ${timeAgo}</div>`;
+            } else {
+                deviceInfoHTML += '<div style="font-size: 11px; color: #64748b;">No sensor data received yet</div>';
+            }
+            
+            deviceInfoHTML += '</div>';
+        } else if (deviceData && !deviceData.hasData) {
+            deviceInfoHTML = `
+                <div class="popup-device-section" style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 18px; margin-right: 6px;">⚠️</span>
+                        <span style="font-weight: bold; color: #92400e; font-size: 13px;">Device Linked (No Data)</span>
+                    </div>
+                    <div style="font-size: 11px; color: #78350f;">
+                        Device ${deviceData.deviceId} is linked but hasn't sent data yet.
+                    </div>
+                </div>
+            `;
+        }
 
         // Sensor icons mapping
         const sensorIcons = {
@@ -1323,6 +1807,7 @@ class MapManager {
                     <h3>📍 ${title}</h3>
                     ${description ? `<p class="popup-description">${description}</p>` : ''}
                 </div>
+                ${deviceInfoHTML}
                 <div class="popup-content">
                     ${sensorsHTML}
                     ${customFieldsHTML}
@@ -1356,6 +1841,94 @@ class MapManager {
         await this.loadDefaultKMLOverlays();
 
         console.log('✅ KML layers reloaded successfully');
+    }
+
+    // Remove all KML/GeoJSON layers currently tracked
+    async clearKMLLayers() {
+        try {
+            if (!Array.isArray(this.kmlLayers) || this.kmlLayers.length === 0) {
+                this.kmlLayers = [];
+                return;
+            }
+
+            // Iterate a copy since we'll modify the array
+            const toRemove = this.kmlLayers.slice();
+            for (const layerInfo of toRemove) {
+                try {
+                    if (layerInfo.layerId && this.map.getLayer && this.map.getLayer(layerInfo.layerId)) {
+                        this.map.removeLayer(layerInfo.layerId);
+                        console.log('Removed layer:', layerInfo.layerId);
+                    }
+                } catch (e) { /* ignore per-layer errors */ }
+
+                try {
+                    if (layerInfo.sourceId && this.map.getSource && this.map.getSource(layerInfo.sourceId)) {
+                        this.map.removeSource(layerInfo.sourceId);
+                        console.log('Removed source:', layerInfo.sourceId);
+                    }
+                } catch (e) { /* ignore per-source errors */ }
+            }
+
+            this.kmlLayers = [];
+            console.log('✅ Cleared all tracked KML/GeoJSON layers');
+        } catch (err) {
+            console.warn('clearKMLLayers error', err);
+        }
+    }
+
+    // Load overlay files given an array of rows (from DB). Each row may contain
+    // `storage_path`, `file_name`, `name`, and an optional `source` (e.g. 'supabase'|'url'|'local').
+    async loadOverlaysFromRows(rows = []) {
+        if (!Array.isArray(rows) || rows.length === 0) return;
+
+        const bucket = (this.overlayConfig && this.overlayConfig.storageBucket) || window.ENV_CONFIG?.KML_BUCKET || 'kml-overlays';
+        const supabaseUrl = window.ENV_CONFIG?.SUPABASE_URL || '';
+
+        for (const r of rows) {
+            try {
+                const storagePath = (r && (r.storage_path || r.file_name || r.file)) || '';
+                if (!storagePath) continue;
+
+                let fileUrl = storagePath;
+
+                // Prefer explicit source hint
+                if (r.source === 'supabase' || (supabaseUrl && storagePath && storagePath.indexOf('/') >= 0)) {
+                    // Construct public url for Supabase storage
+                    // Preserve path slashes while encoding unsafe chars
+                    const safePath = encodeURIComponent(storagePath).replace(/%2F/g, '/');
+                    fileUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${safePath}`;
+                } else if (r.source === 'url') {
+                    fileUrl = r.file || storagePath;
+                } else if (!/^https?:\/\//i.test(storagePath) && supabaseUrl) {
+                    // If it's a plain storage path (no protocol) assume supabase
+                    const safePath = encodeURIComponent(storagePath).replace(/%2F/g, '/');
+                    fileUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${safePath}`;
+                }
+
+                console.log('Loading overlay from row:', { fileUrl, name: r.name || r.file_name });
+                const resp = await fetch(fileUrl);
+                if (!resp.ok) {
+                    console.warn('Could not fetch overlay:', fileUrl, resp.status);
+                    continue;
+                }
+
+                const text = await resp.text();
+                const filename = (r.file_name || r.name || storagePath || '').toString().toLowerCase();
+
+                if (filename.endsWith('.kml') || fileUrl.toLowerCase().endsWith('.kml')) {
+                    await this.loadKML(text, r.name || r.file_name || storagePath);
+                } else {
+                    try {
+                        const geojson = JSON.parse(text);
+                        await this.loadGeoJSON(geojson, r.name || r.file_name || storagePath);
+                    } catch (e) {
+                        console.warn('Unknown overlay format for', fileUrl, e.message || e);
+                    }
+                }
+            } catch (err) {
+                console.warn('loadOverlaysFromRows error for row', r, err);
+            }
+        }
     }
 
     updateUploadedFilesList() {
@@ -1439,6 +2012,30 @@ class MapManager {
         setTimeout(() => div.remove(), 3000);
     }
 }
+
+// Global function to view location dashboard (called from popup button)
+window.viewLocationDashboard = function(locationId) {
+    console.log('📊 Opening dashboard for location:', locationId);
+    
+    // Navigate to location.html with the location ID as a query parameter
+    window.location.href = `location.html?location=${locationId}`;
+};
+
+// Alias for openLocationDashboard (called from popup)
+window.openLocationDashboard = function() {
+    console.log('📊 openLocationDashboard called');
+    
+    // Get location from last clicked marker
+    if (window.mapManager && window.mapManager.lastClickedLocation) {
+        const locationId = window.mapManager.lastClickedLocation;
+        console.log('  Navigating to location dashboard:', locationId);
+        window.location.href = `location.html?location=${locationId}`;
+        return;
+    }
+    
+    console.warn('❌ No location found');
+    alert('Please click on a location marker first.');
+};
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => window.mapManager = new MapManager());

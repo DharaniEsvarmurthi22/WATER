@@ -1,12 +1,13 @@
 // Frontend Configuration
+// NOTE: This file is legacy. Use env-config.js and ENV_CONFIG instead.
 const config = {
     supabase: {
-        url: import.meta.env.VITE_SUPABASE_URL,
-        anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        url: null, // Set via env-config.js
+        anonKey: null, // Set via env-config.js
     },
     api: {
-        timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '5000'),
-        debug: import.meta.env.VITE_DEBUG_MODE === 'true'
+        timeout: 5000,
+        debug: false
     },
     map: {
         styles: {
@@ -19,7 +20,7 @@ const config = {
 };
 
 // Validation function
-export const validateConfig = () => {
+window.validateConfig = () => {
     const issues = [];
 
     if (!config.supabase.url) {
@@ -39,4 +40,4 @@ export const validateConfig = () => {
     return true;
 };
 
-export default config;
+window.config = config;

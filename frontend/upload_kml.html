@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Upload KML - Device Mapping</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-50 p-6">
+  <div class="max-w-2xl mx-auto bg-white rounded-lg p-6 shadow">
+    <h1 class="text-2xl font-bold mb-2">Upload KML Overlay</h1>
+    <p class="text-sm text-gray-600 mb-6">Link KML boundary files to your claimed devices</p>
+
+    <div id="message" class="mb-4 text-sm"></div>
+
+    <!-- My Devices Section -->
+    <div id="myDevicesSection" class="mb-6">
+      <h2 class="text-lg font-semibold mb-3">My Claimed Devices</h2>
+      <div id="deviceList" class="space-y-2">
+        <div class="text-sm text-gray-500">Loading devices...</div>
+      </div>
+    </div>
+
+    <!-- Upload Form -->
+    <form id="uploadForm" class="border-t pt-6">
+      <h2 class="text-lg font-semibold mb-3">Upload KML Overlay</h2>
+
+      <label class="block text-sm font-medium mb-1">Overlay Name</label>
+      <input id="overlayName" class="w-full p-2 border rounded mb-3" placeholder="Village Boundary" />
+
+      <label class="block text-sm font-medium mb-1">KML File *</label>
+      <input id="kmlFile" type="file" accept=".kml,.kmz" class="w-full mb-4" required />
+
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-3 mb-4">
+        <p class="text-sm text-blue-800">
+          <strong>Note:</strong> After uploading, you'll be prompted to link a device to this KML.
+        </p>
+      </div>
+
+      <button type="submit" class="btn-submit w-full">Upload KML</button>
+    </form>
+
+    <!-- Device Linking Popup Modal -->
+    <div id="deviceLinkModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display: none;">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+        <h3 class="text-xl font-bold mb-2">Link ESP32 Device to KML</h3>
+        <p class="text-sm text-gray-600 mb-4">Enter your ESP32 device credentials. This is a <strong>one-time claim</strong> but you can edit device details later.</p>
+        
+        <div class="bg-blue-50 border-l-4 border-blue-400 p-3 mb-4 text-xs">
+          <p class="font-semibold text-blue-800">📌 Important:</p>
+          <ul class="list-disc ml-4 mt-1 text-blue-700 space-y-1">
+            <li>Device can only be claimed once per user</li>
+            <li>You can edit device details anytime after claiming</li>
+            <li>Device will be linked to both you and this KML boundary</li>
+          </ul>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-1">Device ID * <span class="text-xs text-gray-500">(e.g., ESP32-SALEM-001)</span></label>
+          <input id="modalDeviceId" type="text" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" placeholder="ESP32-SALEM-001" required />
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-1">Device Name <span class="text-xs text-gray-500">(Optional, can edit later)</span></label>
+          <input id="modalDeviceName" type="text" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" placeholder="Salem Water Monitor" />
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-1">Device Password * <span class="text-xs text-gray-500">(Secret key)</span></label>
+          <input id="modalDevicePassword" type="password" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" placeholder="Enter device password" required />
+        </div>
+
+        <div id="modalMessage" class="mb-4 text-sm"></div>
+
+        <div class="flex gap-2">
+          <button id="linkDeviceBtn" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium transition-colors">
+            Link Device
+          </button>
+          <button id="skipLinkBtn" class="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 font-medium transition-colors">
+            Skip for Now
+          </button>
+        </div>
+
+        <p class="text-xs text-gray-500 mt-3 text-center">
+          💡 Tip: You can link a device to this KML later from the dashboard
+        </p>
+      </div>
+    </div>
+
+    <!-- Existing KML List -->
+    <div id="existingKmlSection" class="border-t pt-6 mt-6">
+      <h2 class="text-lg font-semibold mb-3">My Device KML Overlays</h2>
+      <div id="existingKmlList" class="space-y-2">
+        <div class="text-sm text-gray-500">Loading...</div>
+      </div>
+    </div>
+
+    <div class="mt-6">
+      <a href="index.html" class="text-sm text-blue-600 hover:underline">← Back to Dashboard</a>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="env-config.js"></script>
+  <script src="upload_kml_new.js"></script>
+</body>
+</html>

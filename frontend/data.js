@@ -1,11 +1,11 @@
 // data.js - Handles sensor data and statistics
 
-// Supabase client
-let supabase = null;
+// Supabase client (renamed to avoid conflicts with other scripts)
+let dataSupabaseClient = null;
 
 // Getter function for Supabase client (for use in other modules)
 function getSupabaseClient() {
-    return supabase;
+    return dataSupabaseClient;
 }
 
 // Expose globally for map.js to use
@@ -24,90 +24,268 @@ const sensorData = {
 
 // Initialize Supabase
 function initializeSupabase() {
-    if (window.ENV && window.ENV.SUPABASE_URL && window.ENV.SUPABASE_ANON_KEY) {
-        supabase = window.supabase.createClient(
-            window.ENV.SUPABASE_URL,
-            window.ENV.SUPABASE_ANON_KEY
-        );
-        console.log('✅ Supabase initialized');
-        return true;
+    console.log('🔧 Initializing Supabase...');
+    console.log('  window.supabase:', typeof window.supabase);
+    console.log('  window.ENV:', window.ENV);
+    console.log('  window.ENV_CONFIG:', window.ENV_CONFIG);
+    
+    const url = window.ENV?.SUPABASE_URL || window.ENV_CONFIG?.SUPABASE_URL;
+    const key = window.ENV?.SUPABASE_ANON_KEY || window.ENV_CONFIG?.SUPABASE_ANON_KEY;
+    
+    console.log('  URL:', url);
+    console.log('  Key:', key ? 'exists' : 'missing');
+    
+    if (!window.supabase) {
+        console.error('❌ Supabase library not loaded!');
+        return false;
     }
-    console.error('❌ Supabase credentials not found');
-    return false;
+    
+    if (!url || !key) {
+        console.error('❌ Supabase credentials not found!');
+        return false;
+    }
+    
+    supabase = window.supabase.createClient(url, key);
+    console.log('✅ Supabase client created:', supabase);
+    return true;
 }
 
 // Dynamic locations - loaded from database
 let sampleLocations = [];
 
-// Fetch real sensor data from Supabase
+// Get current user's claimed devices from device_registry table
+async function getUserLinkedDevices() {
+    console.log('🔍 Getting user claimed devices...');
+    
+    // Get current user from authManager
+    const authManager = window.authManager;
+    if (!authManager || !authManager.currentUser) {
+        console.warn('⚠️ No authenticated user - returning empty (redirect to login should happen)');
+        return []; // Return empty array - no data for unauthenticated users
+    }
+    
+    const userId = authManager.currentUser.id;
+    console.log('👤 Current user ID:', userId);
+    
+    // Check if user is admin (admins can see all devices)
+    const userProfile = authManager.userProfile;
+    if (userProfile && userProfile.role === 'admin') {
+        console.log('👑 Admin user detected - returning null to show all devices');
+        return null; // null means no filter (admin sees everything)
+    }
+    
+    try {
+        // Query device_registry to get this user's claimed devices
+        const { data, error } = await supabase
+            .from('device_registry')
+            .select('device_secret, device_name, device_mac, claimed_at')
+            .eq('claimed_by', userId)
+            .eq('is_claimed', true);
+        
+        console.log('📊 Device registry query result:', { data, error, userId });
+        
+        if (error) {
+            console.error('❌ Error fetching user claimed devices:', error);
+            return [];
+        }
+        
+        const deviceSecrets = data.map(row => row.device_secret).filter(Boolean);
+        console.log('✅ User claimed devices:', deviceSecrets);
+        console.log('📋 Full device data:', data);
+        
+        if (deviceSecrets.length === 0) {
+            console.warn('⚠️ User has no claimed devices yet - dashboard will be empty');
+            console.warn('   Go to claim-device.html to claim a device using its secret code');
+        }
+        
+        return deviceSecrets;
+    } catch (err) {
+        console.error('❌ Exception getting claimed devices:', err);
+        return [];
+    }
+}
+
+// Get table name for a device
+function getDeviceTableName(deviceId) {
+    // Sanitize device ID to match backend table naming
+    return 'device_' + deviceId.replace(/[^a-zA-Z0-9_]/g, '_') + '_readings';
+}
+
+// Fetch real sensor data from centralized sensor_readings table (RLS-filtered)
 async function fetchSensorData() {
+    console.log('🔄 fetchSensorData() called');
+    
+    // If no supabase client, try to create one
     if (!supabase) {
-        console.error('Supabase not initialized');
-        return;
+        console.warn('⚠️ Supabase not initialized, attempting to create client...');
+        if (window.ENV_CONFIG && window.supabase) {
+            try {
+                supabase = window.supabase.createClient(
+                    window.ENV_CONFIG.SUPABASE_URL,
+                    window.ENV_CONFIG.SUPABASE_ANON_KEY
+                );
+                console.log('✅ Supabase client created in fetchSensorData');
+            } catch (err) {
+                console.error('❌ Failed to create Supabase client:', err);
+                return;
+            }
+        } else {
+            console.error('❌ Cannot create Supabase client - missing dependencies');
+            return;
+        }
     }
 
     try {
-        // Step 1: Fetch all locations from database
+        // ⭐ SIMPLIFIED: Query sensor_readings directly - RLS handles filtering!
+        console.log('📡 Fetching from sensor_readings table (RLS will filter by claimed devices)');
+        
+        const { data, error } = await supabase
+            .from('sensor_readings')
+            .select('*')
+            .order('timestamp', { ascending: false })
+            .limit(200);
+        
+        if (error) {
+            console.error('❌ Error querying sensor_readings:', error);
+            // If user has no claimed devices, RLS may return no data.
+            // Do NOT clear existing client-side data here to avoid overwriting
+            // user-applied color scales or UI state; just warn and exit.
+            if (error.code === 'PGRST116' || error.message?.includes('0 rows')) {
+                console.warn('⚠️ No data returned (user may have no claimed devices) - keeping local data intact');
+                return;
+            }
+            throw error;
+        }
+        
+        // RLS ensures we only see data for our claimed devices
+        console.log(`✅ Got ${data?.length || 0} readings from sensor_readings (filtered by RLS)`);
+        
+        if (!data || data.length === 0) {
+            console.warn('⚠️ No sensor readings available - keeping existing client-side data and UI state');
+            console.warn('   Possible reasons:');
+            console.warn('   1. User has no claimed devices (go to claim-device.html)');
+            console.warn('   2. ESP32 devices haven\'t sent data yet');
+            console.warn('   3. RLS policies are blocking access');
+            // Do not overwrite `allReadings`/`sensorData.locations` to avoid
+            // unintentionally resetting color scales or other UI state.
+            return;
+        }
+        
+        console.log('📊 Sample reading:', data[0]);
+        
+        // Store readings globally
+        let allDeviceReadings = data;
+        allReadings = allDeviceReadings;
+        window.allReadings = allReadings;
+        
+        // Calculate statistics from data
+        const uniqueSensors = new Set(data.map(r => r.sensor_id));
+        sensorData.statistics.activeSensors = uniqueSensors.size;
+        sensorData.statistics.avgReading = data.length > 0
+            ? data.reduce((sum, r) => sum + parseFloat(r.value || 0), 0) / data.length
+            : 0;
+        sensorData.lastUpdate = data[0]?.timestamp || new Date().toISOString();
+        
+        console.log('📊 Statistics calculated:', sensorData.statistics);
+        
+        // Update statistics
+        updateStatistics();
+        
+        // Update recent readings panel
+        updateRecentReadings(data.slice(0, 10)); // Show latest 10 readings
+        
+        // Update location filter dropdowns
+        updateLocationFilters();
+        
+        // Group readings by device_secret to create location markers
+        const deviceGroups = {};
+        data.forEach(reading => {
+            const deviceSecret = reading.device_secret || reading.device_id; // Fallback for compatibility
+            if (!deviceGroups[deviceSecret]) {
+                deviceGroups[deviceSecret] = [];
+            }
+            deviceGroups[deviceSecret].push(reading);
+        });
+        
+        console.log('📋 Devices with data:', Object.keys(deviceGroups));
+        
+        // Process each device's latest reading to create map markers
+        const locationMap = new Map();
+        
+        Object.entries(deviceGroups).forEach(([deviceSecret, readings]) => {
+            // Get the most recent reading for this device
+            const latestReading = readings[0]; // Already sorted by timestamp DESC
+            
+            // Use device_secret as location identifier
+            const locationId = deviceSecret;
+            
+            if (!locationMap.has(locationId)) {
+                locationMap.set(locationId, {
+                    id: locationId,
+                    name: latestReading.device_name || deviceId,
+                    coordinates: [latestReading.latitude, latestReading.longitude],
+                    readings: readings,
+                    latestReading: latestReading,
+                    lastUpdate: latestReading.timestamp,
+                    sensorCount: 1,
+                    status: latestReading.status || 'active'
+                });
+            }
+        });
+        
+        // Update locations array
+        sensorData.locations = Array.from(locationMap.values());
+        updateLocationsList();
+        
+        console.log(`📍 Displaying ${locationMap.size} device(s) from sensor data`);
+        
+        // Update map markers
+        if (window.mapManager) {
+            locationMap.forEach((locationData, locationId) => {
+                addESP32MarkerByLocation(locationId, locationData);
+            });
+        }
+
+        // Also fetch old format locations for compatibility (if table exists)
+        console.log('📍 Fetching locations table for backward compatibility...');
         const { data: locations, error: locError } = await supabase
             .from('locations')
             .select('*')
             .order('name');
 
-        if (locError) throw locError;
+        if (locError && locError.code !== '42P01') { // Ignore if table doesn't exist
+            console.warn('Locations table error:', locError);
+        } else if (locations && locations.length > 0) {
+            console.log('📍 Fetched legacy locations from database:', locations?.length, 'rows');
+        }
 
-        console.log('📍 Fetched locations from database:', locations);
-
-        // Step 2: Fetch latest readings for each sensor
+        // Fetch old format readings for backward compatibility  
+        console.log('📊 Checking for old format sensor_readings...');
         const { data: readings, error: readError } = await supabase
             .from('sensor_readings')
             .select(`
                 sensor_id,
                 value,
                 rssi,
+                device_name,
                 timestamp
             `)
             .order('timestamp', { ascending: false })
             .limit(200);
 
-        if (readError) throw readError;
-
-        console.log('📊 Fetched sensor readings:', readings);
-
-        // Step 3: Convert database locations to frontend format
-        if (locations && locations.length > 0) {
-            sampleLocations = locations.map(loc => ({
-                id: loc.location_id || loc.id,
-                name: loc.name,
-                description: `Water quality monitoring station - ${loc.name}`,
-                coordinates: [loc.longitude || 0, loc.latitude || 0],
-                status: "active",
-                lastReading: 0,
-                sensors: [],
-                dbId: loc.id // Store database UUID for reference
-            }));
-        }
-
-        // Process and update location data
-        if (readings && readings.length > 0) {
-            allReadings = readings; // Store all readings for filtering
+        if (readError && readError.code !== 'PGRST116') { // Ignore if no results
+            console.warn('Old format readings query info:', readError);
+        } else if (readings && readings.length > 0) {
+            console.log('📊 Found old format sensor readings:', readings?.length, 'rows');
+            console.log('   Sample:', readings?.[0]);
+            
+            // Process old format data if needed
             updateLocationsWithData(readings);
-            filterReadings(); // Apply current filters
-            sensorData.lastUpdate = new Date();
-            updateStatistics();
-        } else {
-            // No readings yet, but still show locations
-            sensorData.locations = sampleLocations;
-            updateLocationsList();
-
-            // Refresh map markers even without readings
-            if (window.mapManager && window.mapManager.addVillageMarkers) {
-                console.log('🗺️ Refreshing map markers with database locations (no readings yet)');
-                window.mapManager.addVillageMarkers();
-            }
+            filterReadings();
         }
 
     } catch (error) {
-        console.error('Error fetching sensor data:', error);
+        console.error('❌ Error fetching sensor data:', error);
     }
 }
 
@@ -172,10 +350,226 @@ function updateLocationsWithData(readings) {
     }
 }
 
-// Subscribe to real-time updates
-function subscribeToRealtimeUpdates() {
+// Display ESP32 sensor data as markers on the map
+function displayESP32Markers(esp32Readings) {
+    if (!window.mapManager || !window.mapManager.map) {
+        console.warn('Map not ready for ESP32 markers');
+        return;
+    }
+
+    // Group readings by location (extracted from sensor_id)
+    const locationMap = new Map();
+
+    esp32Readings.forEach(reading => {
+        // Extract location from sensor_id (e.g., "sankari_ph" -> "sankari")
+        const location = reading.sensor_id ? reading.sensor_id.split('_')[0] : null;
+        if (!location) return;
+
+        if (!locationMap.has(location)) {
+            locationMap.set(location, {
+                location_id: location,
+                device_name: reading.device_name || reading.device_identifier || null,
+                timestamp: reading.timestamp,
+                readings: {}
+            });
+        }
+
+        const locationData = locationMap.get(location);
+        // Store sensor type and value (e.g., "ph" -> 8.97)
+        const sensorType = reading.sensor_id.split('_')[1];
+        locationData.readings[sensorType] = parseFloat(reading.value);
+        locationData.rssi = reading.rssi;
+        
+        // Update timestamp if newer
+        if (new Date(reading.timestamp) > new Date(locationData.timestamp)) {
+            locationData.timestamp = reading.timestamp;
+        }
+    });
+
+    console.log(`📍 Displaying ${locationMap.size} location(s) from ESP32 data:`, Array.from(locationMap.keys()));
+
+    // Add marker for each location (using KML overlay centroids)
+    locationMap.forEach((locationData, locationId) => {
+        addESP32MarkerByLocation(locationId, locationData);
+    });
+}
+
+// Add a single ESP32 marker to the map
+function addESP32Marker(reading) {
+    if (!window.mapManager || !window.mapManager.map) return;
+
+    const { device_id, device_name, latitude, longitude, status, ph, turbidity, temperature, water_level, flow_rate, tds, timestamp } = reading;
+
+    // Determine marker color based on status
+    let markerColor = '#10b981'; // Green for Good
+    if (status === 'Warning') markerColor = '#f59e0b'; // Orange
+    if (status === 'Critical') markerColor = '#ef4444'; // Red
+
+    // Create popup content
+    const popupContent = `
+        <div style="min-width: 200px;">
+            <h3 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px;">
+                ${device_name || device_id}
+            </h3>
+            <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+                <strong>Device ID:</strong> ${device_id}
+            </div>
+            <div style="background: ${markerColor}20; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                <div style="color: ${markerColor}; font-weight: bold; font-size: 14px;">
+                    Status: ${status || 'Unknown'}
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+                ${ph ? `<div><strong>pH:</strong> ${ph.toFixed(2)}</div>` : ''}
+                ${temperature ? `<div><strong>Temp:</strong> ${temperature.toFixed(1)}°C</div>` : ''}
+                ${turbidity ? `<div><strong>Turbidity:</strong> ${turbidity.toFixed(2)} NTU</div>` : ''}
+                ${tds ? `<div><strong>TDS:</strong> ${tds} ppm</div>` : ''}
+                ${water_level ? `<div><strong>Water Level:</strong> ${water_level.toFixed(1)} cm</div>` : ''}
+                ${flow_rate ? `<div><strong>Flow Rate:</strong> ${flow_rate.toFixed(1)} L/min</div>` : ''}
+            </div>
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #666;">
+                <div><strong>GPS:</strong> ${latitude.toFixed(6)}, ${longitude.toFixed(6)}</div>
+                <div><strong>Last Update:</strong> ${new Date(timestamp).toLocaleString()}</div>
+            </div>
+        </div>
+    `;
+
+    // Create marker
+    const marker = new mapboxgl.Marker({
+        color: markerColor
+    })
+        .setLngLat([longitude, latitude])
+        .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(popupContent))
+        .addTo(window.mapManager.map);
+
+    // Store marker reference for cleanup
+    if (!window.mapManager.esp32Markers) {
+        window.mapManager.esp32Markers = [];
+    }
+    window.mapManager.esp32Markers.push(marker);
+
+    console.log(`✅ Added ESP32 marker for ${device_id} at [${longitude}, ${latitude}]`);
+}
+
+// Add ESP32 marker using KML overlay centroid for location
+function addESP32MarkerByLocation(locationId, locationData) {
+    if (!window.mapManager || !window.mapManager.map) return;
+
+    // Find matching KML overlay to get coordinates
+    let coordinates = null;
+    if (window.mapManager.kmlOverlays) {
+        for (const [overlayId, overlay] of Object.entries(window.mapManager.kmlOverlays)) {
+            if (overlay.name && overlay.name.toLowerCase() === locationId.toLowerCase()) {
+                coordinates = overlay.centroid;
+                break;
+            }
+        }
+    }
+
+    if (!coordinates || !coordinates.lat || !coordinates.lng) {
+        console.warn(`No KML overlay found for location: ${locationId}`);
+        return;
+    }
+
+    const { ph, turbidity, temperature, tds } = locationData.readings;
+    const { device_name, rssi, timestamp } = locationData;
+
+    // Determine status based on pH
+    let status = 'Good';
+    let markerColor = '#10b981'; // Green
+    if (ph) {
+        if (ph < 6.5 || ph > 8.5) {
+            status = 'Warning';
+            markerColor = '#f59e0b'; // Orange
+        }
+        if (ph < 6.0 || ph > 9.0) {
+            status = 'Critical';
+            markerColor = '#ef4444'; // Red
+        }
+    }
+
+    // Create popup content
+    const popupContent = `
+        <div style="min-width: 220px;">
+            <h3 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; text-transform: capitalize;">
+                ${locationId}
+            </h3>
+            <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+                <strong>Device:</strong> ${device_name || 'Unknown'}<br>
+                <strong>Signal:</strong> ${rssi} dBm
+            </div>
+            <div style="background: ${markerColor}20; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                <div style="color: ${markerColor}; font-weight: bold; font-size: 14px;">
+                    Status: ${status}
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+                ${ph ? `<div><strong>pH:</strong> ${ph.toFixed(2)}</div>` : ''}
+                ${temperature ? `<div><strong>Temp:</strong> ${temperature.toFixed(1)}°C</div>` : ''}
+                ${turbidity ? `<div><strong>Turbidity:</strong> ${turbidity.toFixed(2)} NTU</div>` : ''}
+                ${tds ? `<div><strong>TDS:</strong> ${tds.toFixed(0)} ppm</div>` : ''}
+            </div>
+            <div style="margin-top: 8px; font-size: 11px; color: #999;">
+                Updated: ${new Date(timestamp).toLocaleString()}
+            </div>
+        </div>
+    `;
+
+    // Create custom marker icon
+    const markerIcon = L.divIcon({
+        className: 'custom-marker',
+        html: `
+            <div style="
+                background: ${markerColor};
+                width: 32px;
+                height: 32px;
+                border-radius: 50% 50% 50% 0;
+                border: 3px solid white;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                transform: rotate(-45deg);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            ">
+                <span style="
+                    transform: rotate(45deg);
+                    color: white;
+                    font-weight: bold;
+                    font-size: 16px;
+                ">💧</span>
+            </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32]
+    });
+
+    // Add marker to map
+    const marker = L.marker([coordinates.lat, coordinates.lng], { icon: markerIcon })
+        .addTo(window.mapManager.map)
+        .bindPopup(popupContent);
+
+    console.log(`✅ Added ESP32 marker for ${locationId} at`, coordinates);
+}
+
+
+// Subscribe to real-time updates with proper device filtering
+async function subscribeToRealtimeUpdates() {
     if (!supabase) return;
 
+    console.log('🔔 Setting up real-time subscription...');
+    
+    // Get user's claimed devices to filter subscriptions
+    const claimedDevices = await getUserLinkedDevices();
+    
+    // If user has no devices, don't subscribe
+    if (claimedDevices && claimedDevices.length === 0) {
+        console.warn('⚠️ No devices claimed - skipping real-time subscription');
+        console.warn('   Go to claim-device.html to claim a device');
+        return;
+    }
+    
+    // Create subscription with device filter
     const channel = supabase
         .channel('sensor_readings_changes')
         .on(
@@ -183,25 +577,43 @@ function subscribeToRealtimeUpdates() {
             {
                 event: 'INSERT',
                 schema: 'public',
-                table: 'sensor_readings'
+                table: 'sensor_readings',
+                // CRITICAL: Filter by device_secret on the subscription itself
+                filter: claimedDevices && claimedDevices.length > 0 
+                    ? `device_secret=in.(${claimedDevices.join(',')})`
+                    : undefined
             },
             (payload) => {
                 console.log('🔔 New sensor reading:', payload.new);
-                // Refresh data when new reading arrives
-                fetchSensorData();
+                
+                // Extra safety check: verify device_secret is in our list
+                const deviceSecret = payload.new.device_secret || payload.new.device_id;
+                if (!claimedDevices || claimedDevices.includes(deviceSecret)) {
+                    console.log('✅ Reading is for our device, refreshing...');
+                    // Refresh data when new reading arrives
+                    fetchSensorData();
 
-                // Also add the new reading to recent readings immediately
-                const container = document.getElementById('recentReadings');
-                if (container && container.firstChild) {
-                    // Add new reading to the top and remove last one if more than 10
-                    const readings = [payload.new];
-                    updateRecentReadings(readings);
+                    // Also add the new reading to recent readings immediately
+                    const container = document.getElementById('recentReadings');
+                    if (container && container.firstChild) {
+                        const readings = [payload.new];
+                        updateRecentReadings(readings);
+                    }
+                } else {
+                    console.log('⚠️ Reading is not for our device, ignoring');
                 }
             }
         )
-        .subscribe();
-
-    console.log('✅ Subscribed to real-time updates');
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                console.log('✅ Subscribed to real-time updates');
+                if (claimedDevices && claimedDevices.length > 0) {
+                    console.log('📡 Listening for devices:', claimedDevices);
+                } else {
+                    console.log('📡 Listening for all devices (admin mode)');
+                }
+            }
+        });
 }
 
 // Subscribe to backend changes for locations, popup config, and overlay metadata
@@ -264,14 +676,17 @@ function initializeLocations() {
     sensorData.locations = sampleLocations;
     updateLocationsList();
 
-    // Fetch real data from Supabase
+    // Always try to fetch real data from Supabase
+    console.log('🚀 initializeLocations() - attempting to fetch sensor data...');
+    fetchSensorData();
+    
+    // Subscribe to realtime updates if supabase is available
     if (supabase) {
-        fetchSensorData();
         subscribeToRealtimeUpdates();
-
-        // Auto-refresh every 30 seconds
-        setInterval(fetchSensorData, 30000);
     }
+
+    // Auto-refresh every 30 seconds
+    setInterval(fetchSensorData, 30000);
 }
 
 // Update locations list in the UI (helper function that accepts custom data)
@@ -279,21 +694,28 @@ function updateLocationsListWithData(locations) {
     const locationsList = document.getElementById('locationsList');
     if (!locationsList) return;
 
-    locationsList.innerHTML = locations.map(location => `
+    locationsList.innerHTML = locations.map(location => {
+        // Handle both old format (sensors array) and new format (readings array)
+        const sensorsCount = location.sensors?.length || location.sensorCount || 0;
+        const description = location.description || (location.latestReading ? `Device: ${location.name}` : 'No description');
+        const lastReadingValue = location.lastReading || (location.latestReading?.value) || 0;
+        
+        return `
         <div class="location-item" data-id="${location.id}">
             <div class="flex items-center justify-between mb-2">
                 <h3 class="font-medium text-gray-900">${location.name}</h3>
-                <div class="status-dot status-${location.status} animate"></div>
+                <div class="status-dot status-${location.status || 'active'} animate"></div>
             </div>
-            <p class="text-sm text-gray-600 mb-2">${location.description}</p>
+            <p class="text-sm text-gray-600 mb-2">${description}</p>
             <div class="flex justify-between items-center text-sm">
-                <span class="text-gray-500">${location.sensors.length} sensors</span>
-                <span class="font-medium ${location.lastReading >= 80 ? 'text-green-600' : location.lastReading >= 60 ? 'text-yellow-600' : 'text-red-600'}">
-                    ${location.lastReading.toFixed(1)}%
+                <span class="text-gray-500">${sensorsCount} sensors</span>
+                <span class="font-medium ${lastReadingValue >= 80 ? 'text-green-600' : lastReadingValue >= 60 ? 'text-yellow-600' : 'text-red-600'}">
+                    ${typeof lastReadingValue === 'number' ? lastReadingValue.toFixed(1) : '0.0'}%
                 </span>
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 
     // Add click event listeners to location items
     const locationItems = document.querySelectorAll('.location-item');
@@ -356,10 +778,31 @@ function updateLocationFilters() {
     const statsLocationFilter = document.getElementById('statsLocationFilter');
     const locationFilter = document.getElementById('locationFilter');
 
-    // Get unique locations from data
-    const uniqueLocations = sampleLocations.map(loc => ({
-        id: loc.id,
-        name: loc.name
+    // Get unique locations from actual sensor data
+    const uniqueLocationIds = new Set();
+    if (allReadings && allReadings.length > 0) {
+        allReadings.forEach(reading => {
+            if (reading.sensor_id) {
+                // Extract location from sensor_id (e.g., "salemsouth_ph" -> "salemsouth")
+                const locationId = reading.sensor_id.split('_')[0];
+                uniqueLocationIds.add(locationId);
+            }
+        });
+    }
+
+    // Map location IDs to friendly names
+    const locationNames = {
+        'salemsouth': 'Salem South',
+        'yercaud': 'Yercaud',
+        'sankari': 'Sankari',
+        'edappadi': 'Edappadi',
+        'omalur': 'Omalur',
+        'mettur': 'Mettur'
+    };
+
+    const uniqueLocations = Array.from(uniqueLocationIds).map(id => ({
+        id: id,
+        name: locationNames[id] || id.charAt(0).toUpperCase() + id.slice(1)
     }));
 
     // Build options HTML
@@ -367,6 +810,8 @@ function updateLocationFilters() {
         <option value="all">All Locations</option>
         ${uniqueLocations.map(loc => `<option value="${loc.id}">${loc.name}</option>`).join('')}
     `;
+
+    console.log('📍 Updating location filters with', uniqueLocations.length, 'locations:', uniqueLocations);
 
     // Update both dropdowns
     if (statsLocationFilter) {
@@ -390,8 +835,29 @@ function updateLocationFilters() {
 
 // Update statistics in the UI
 function updateStatistics(locationFilter = 'all') {
+    console.log('📊 ========== updateStatistics() called ==========');
+    console.log('   locationFilter:', locationFilter);
+    console.log('   allReadings.length:', allReadings?.length || 0);
+    console.log('   sensorData.statistics:', sensorData.statistics);
+    
     const statsContainer = document.getElementById('statsContainer');
-    if (!statsContainer) return;
+    if (!statsContainer) {
+        console.error('❌ statsContainer element not found!');
+        return;
+    }
+    console.log('✅ statsContainer found');
+
+    // Show message if no data available
+    if (!allReadings || allReadings.length === 0) {
+        statsContainer.innerHTML = `
+            <div class="col-span-3 bg-gray-50 rounded-lg p-4 text-center">
+                <i class="fas fa-chart-line text-gray-300 text-3xl mb-2"></i>
+                <p class="text-sm text-gray-600">No statistics available</p>
+                <p class="text-xs text-gray-500 mt-1">Link a device to see live statistics</p>
+            </div>
+        `;
+        return;
+    }
 
     if (locationFilter === 'all') {
         // Show overall statistics
@@ -447,10 +913,12 @@ function updateStatistics(locationFilter = 'all') {
         });
 
         const locationNames = {
-            'ukkadam': 'Ukkadam',
-            'singanallur': 'Singanallur',
-            'redhills': 'Red Hills',
-            'porur': 'Porur'
+            'salemsouth': 'Salem South',
+            'yercaud': 'Yercaud',
+            'sankari': 'Sankari',
+            'edappadi': 'Edappadi',
+            'omalur': 'Omalur',
+            'mettur': 'Mettur'
         };
 
         statsContainer.innerHTML = `
@@ -513,8 +981,32 @@ function getSensorDisplayInfo(type) {
 
 // Update recent readings display
 function updateRecentReadings(readings) {
+    console.log('📋 ========== updateRecentReadings() called ==========');
+    console.log('   readings.length:', readings?.length || 0);
+    if (readings && readings.length > 0) {
+        console.log('   Sample reading:', readings[0]);
+    }
+    
     const container = document.getElementById('recentReadings');
-    if (!container) return;
+    if (!container) {
+        console.error('❌ recentReadings container not found!');
+        return;
+    }
+    console.log('✅ recentReadings container found');
+
+    // Show helpful message if no readings
+    if (!readings || readings.length === 0) {
+        container.innerHTML = `
+            <div class="p-4 text-center">
+                <div class="text-gray-400 mb-2">
+                    <i class="fas fa-info-circle text-2xl"></i>
+                </div>
+                <p class="text-sm text-gray-600 font-medium">No sensor data available</p>
+                <p class="text-xs text-gray-500 mt-1">Upload a KML file and link a device to see data</p>
+            </div>
+        `;
+        return;
+    }
 
     container.innerHTML = readings.map(reading => {
         // Extract sensor type from sensor_id (e.g., "ukkadam_ph" -> "ph")
@@ -574,37 +1066,51 @@ window.sensorData = sensorData;
 
 // Store all readings for filtering
 let allReadings = [];
+// Expose globally for colorscale and other modules
+window.allReadings = allReadings;
+
 let currentLocationFilter = 'all';
 let currentSensorFilter = 'all';
 
 // Filter readings based on selected filters
 function filterReadings() {
+    console.log('🔍 ========== filterReadings() called ==========');
+    console.log('   allReadings available:', allReadings?.length || 0);
+    console.log('   currentLocationFilter:', currentLocationFilter);
+    console.log('   currentSensorFilter:', currentSensorFilter);
+    
     let filtered = allReadings;
 
     if (currentLocationFilter !== 'all') {
         filtered = filtered.filter(r => r.sensor_id.startsWith(currentLocationFilter));
+        console.log('   After location filter:', filtered.length);
     }
 
     if (currentSensorFilter !== 'all') {
         filtered = filtered.filter(r => r.sensor_id.endsWith(currentSensorFilter));
+        console.log('   After sensor filter:', filtered.length);
     }
 
+    console.log('   Calling updateRecentReadings with', filtered.slice(0, 10).length, 'readings');
     updateRecentReadings(filtered.slice(0, 10));
 }
 
 // Initialize data handling
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize Supabase first
-    if (initializeSupabase()) {
-        // Initialize locations with real data
-        initializeLocations();
-        // Start subscriptions for backend changes (locations, overlays, popup config)
+    console.log('🎬 DOMContentLoaded - Starting data.js initialization...');
+    
+    // Try to initialize Supabase first
+    const supabaseInitialized = initializeSupabase();
+    console.log('   Supabase initialization result:', supabaseInitialized);
+    
+    // Always initialize locations (fetchSensorData will create client if needed)
+    initializeLocations();
+    
+    // Subscribe to backend changes if Supabase is ready
+    if (supabaseInitialized) {
         subscribeToBackendChanges();
     } else {
-        // Fallback to sample data if Supabase fails
-        console.warn('⚠️ Using sample data - Supabase not available');
-        sensorData.locations = sampleLocations;
-        updateLocationsList();
+        console.warn('⚠️ Supabase not initialized in DOMContentLoaded, but fetchSensorData will retry');
     }
 
     // Set up location search
@@ -765,3 +1271,78 @@ function applyDataRangeFilter() {
         console.warn('⚠️ No locations match the filter range');
     }
 }
+
+// Get latest sensor data for a device linked to KML overlay
+async function getDeviceDataForKML(kmlOverlayId) {
+    if (!supabase) {
+        console.error('Supabase not initialized');
+        return null;
+    }
+
+    try {
+        // Get the device identifier linked to this KML overlay
+        const { data: kmlData, error: kmlError } = await supabase
+            .from('kml_overlays')
+            .select('device_identifier')
+            .eq('id', kmlOverlayId)
+            .single();
+
+        if (kmlError || !kmlData || !kmlData.device_identifier) {
+            console.log('No device linked to this KML overlay');
+            return null;
+        }
+
+        const deviceId = kmlData.device_identifier;
+        console.log(`📱 Found device ${deviceId} linked to KML overlay`);
+
+        // Get the latest sensor readings for this device
+        const { data: readings, error: readError } = await supabase
+            .from('sensor_readings')
+            .select('*')
+            .eq('device_identifier', deviceId)
+            .order('timestamp', { ascending: false })
+            .limit(10);
+
+        if (readError) {
+            console.error('Error fetching device readings:', readError);
+            return null;
+        }
+
+        if (!readings || readings.length === 0) {
+            console.log(`No sensor data found for device ${deviceId}`);
+            return {
+                deviceId,
+                hasData: false,
+                message: 'No data received yet'
+            };
+        }
+
+        // Group by sensor_id and get the latest for each
+        const latestBySensor = {};
+        readings.forEach(reading => {
+            const sensorId = reading.sensor_id || 'unknown';
+            if (!latestBySensor[sensorId]) {
+                latestBySensor[sensorId] = reading;
+            }
+        });
+
+        console.log(`✅ Got sensor data for device ${deviceId}:`, latestBySensor);
+
+        return {
+            deviceId,
+            hasData: true,
+            sensors: latestBySensor,
+            latestReading: readings[0],
+            allReadings: readings
+        };
+
+    } catch (error) {
+        console.error('Error getting device data for KML:', error);
+        return null;
+    }
+}
+
+// Expose globally for map.js to use
+window.getDeviceDataForKML = getDeviceDataForKML;
+window.getUserLinkedDevices = getUserLinkedDevices;
+window.getDeviceTableName = getDeviceTableName;

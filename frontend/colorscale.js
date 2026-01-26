@@ -659,43 +659,100 @@ class ColorscaleManager {
             console.log('   Time threshold:', timeThreshold && timeThreshold.toISOString ? timeThreshold.toISOString() : timeThreshold);
 
             // Try to fetch from Supabase first, otherwise fallback to local data
-            const supabaseClient = (window.getSupabaseClient && window.getSupabaseClient()) || null;
+            let supabaseClient = (window.getSupabaseClient && window.getSupabaseClient()) || null;
+            console.log('🔍 Supabase client check (from window.getSupabaseClient):', supabaseClient ? 'AVAILABLE ✅' : 'NULL ❌');
+            
+            // If no client from data.js, create our own directly
+            if (!supabaseClient && window.ENV_CONFIG) {
+                console.log('🔧 Creating Supabase client directly from ENV_CONFIG...');
+                try {
+                    supabaseClient = window.supabase.createClient(
+                        window.ENV_CONFIG.SUPABASE_URL,
+                        window.ENV_CONFIG.SUPABASE_ANON_KEY
+                    );
+                    console.log('✅ Supabase client created successfully');
+                } catch (err) {
+                    console.error('❌ Failed to create Supabase client:', err);
+                }
+            }
 
             let locations = [];
             let allReadings = [];
 
             if (supabaseClient) {
                 try {
-                    console.log('✅ Supabase client available - fetching locations and readings');
-                    const { data: locData, error: locError } = await supabaseClient
-                        .from('locations')
-                        .select('location_id, name');
-
-                    if (locError) throw locError;
-
-                    locations = locData || [];
-                    console.log(`✅ Found ${locations.length} locations:`, locations.map(l => l.name));
-
-                    const sensorIds = locations.map(loc => `${loc.location_id}_${this.currentParameter}`);
-                    console.log(`   Fetching data for ${sensorIds.length} sensors within time range...`);
-
+                    console.log('✅ Supabase client available - fetching readings');
+                    console.log('   Query: sensor_id ILIKE %_' + this.currentParameter);
+                    
+                    // FIRST: Try WITHOUT time filter to see if data exists at all
+                    console.log('🧪 TEST QUERY 1: Fetching ALL data (no time filter)...');
+                    const { data: testData, error: testError } = await supabaseClient
+                        .from('sensor_readings')
+                        .select('sensor_id, value, timestamp')
+                        .ilike('sensor_id', `%_${this.currentParameter}`)
+                        .order('timestamp', { ascending: false })
+                        .limit(10);
+                    
+                    console.log('   Test query result:', testError ? 'ERROR' : 'SUCCESS');
+                    console.log('   Test error:', testError);
+                    console.log('   Test data count:', testData?.length);
+                    if (testData && testData.length > 0) {
+                        console.log('   Sample test data:', testData.slice(0, 2));
+                    }
+                    
+                    // SECOND: Try WITH time filter
+                    console.log('🧪 TEST QUERY 2: Fetching with time filter >= ' + timeThreshold.toISOString());
                     const { data: readingsData, error: readError } = await supabaseClient
                         .from('sensor_readings')
                         .select('sensor_id, value, timestamp')
-                        .in('sensor_id', sensorIds.length ? sensorIds : [''])
+                        .ilike('sensor_id', `%_${this.currentParameter}`)
                         .gte('timestamp', timeThreshold.toISOString())
                         .order('timestamp', { ascending: false });
 
-                    if (readError) throw readError;
+                    console.log('   Filtered query result:', readError ? 'ERROR' : 'SUCCESS');
+                    console.log('   Filtered error:', readError);
+                    console.log('   Filtered data count:', readingsData?.length);
+                    if (readingsData && readingsData.length > 0) {
+                        console.log('   Sample filtered data:', readingsData.slice(0, 2));
+                    }
 
-                    allReadings = readingsData || [];
-                    console.log(`✅ Fetched ${allReadings.length} readings within ${this.timeInterval}`);
-                        } catch (err) {
-                    console.warn('⚠️ Supabase fetch failed, will try local fallback:', err);
+                    if (readError) {
+                        console.error('❌ Query error:', readError);
+                        throw readError;
+                    }
+
+                    // If time-filtered query is empty but test query has data, use all data
+                    if ((!readingsData || readingsData.length === 0) && testData && testData.length > 0) {
+                        console.warn('⚠️ Time filter returned 0 results but data exists! Using all data instead.');
+                        allReadings = testData;
+                    } else {
+                        allReadings = readingsData || [];
+                    }
+                    
+                    console.log(`✅ Using ${allReadings.length} readings for ${this.currentParameter}`);
+                    
+                    // Extract unique locations from sensor_id
+                    const locationIds = new Set();
+                    allReadings.forEach(r => {
+                        const locId = r.sensor_id.split('_')[0];
+                        locationIds.add(locId);
+                    });
+                    
+                    locations = Array.from(locationIds).map(id => ({
+                        location_id: id,
+                        name: id.charAt(0).toUpperCase() + id.slice(1)
+                    }));
+                    
+                    console.log(`✅ Found ${locations.length} locations from data:`, locations.map(l => l.name));
+                } catch (err) {
+                    console.error('❌ Supabase fetch failed:', err);
+                    console.error('   Error details:', JSON.stringify(err));
                     locations = [];
                     allReadings = [];
                 }
-                    }
+            } else {
+                console.error('❌ No Supabase client available!');
+            }
 
             // Local fallback: use window.sensorData.locations if Supabase not available
             if ((!locations || locations.length === 0) && window.sensorData && window.sensorData.locations) {
@@ -704,16 +761,35 @@ class ColorscaleManager {
             }
 
             if ((!allReadings || allReadings.length === 0) && window.allReadings) {
-                // Filter readings for current parameter and timeThreshold
+                // Use ALL readings for current parameter (ignore time filter for fallback)
                 allReadings = window.allReadings.filter(r => {
-                    try {
-                        const ts = new Date(r.timestamp);
-                        return r.sensor_id.endsWith(`_${this.currentParameter}`) && ts >= timeThreshold;
-                    } catch (e) {
-                        return false;
-                    }
+                    return r.sensor_id.endsWith(`_${this.currentParameter}`);
                 });
-                console.log('ℹ️ Using local readings fallback, count:', allReadings.length);
+                console.log('ℹ️ Using local readings fallback (ALL TIME), count:', allReadings.length);
+                if (allReadings.length > 0) {
+                    console.log('   Sample:', allReadings[0]);
+                }
+            }
+
+            // If we have local readings but the current `locations` list appears to
+            // contain device names (e.g. SALEM_ESP32_001) which won't match the
+            // reading `sensor_id` prefixes (e.g. yercaud_ph), prefer deriving
+            // locations from the readings themselves so color mapping aligns.
+            if (allReadings && allReadings.length > 0) {
+                const firstPrefix = (allReadings[0].sensor_id || '').split('_')[0];
+                const hasMatchingLocation = locations && locations.some(l => l.location_id === firstPrefix);
+                if (!hasMatchingLocation) {
+                    const locSet = new Set();
+                    allReadings.forEach(r => {
+                        const p = (r.sensor_id || '').split('_')[0];
+                        if (p) locSet.add(p);
+                    });
+                    locations = Array.from(locSet).map(id => ({
+                        location_id: id,
+                        name: id.charAt(0).toUpperCase() + id.slice(1)
+                    }));
+                    console.log('ℹ️ Derived locations from local readings:', locations.map(l => l.location_id));
+                }
             }
 
             console.log(`📊 Total readings to process: ${allReadings.length}`);

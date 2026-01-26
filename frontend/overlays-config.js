@@ -10,25 +10,11 @@ const OVERLAY_CONFIG = {
     storageBucket: 'kml-overlays',  // Supabase storage bucket name
 
     // List of overlay files to load automatically
-    overlays: [
-        // ═══════════════════════════════════════════════════════
-        // PRODUCTION: Load from Supabase Storage (Backend)
-        // All KML files uploaded to Supabase Storage bucket
-        // ═══════════════════════════════════════════════════════
-        {
-            name: 'Nallampatti Cluster',
-            source: 'supabase',  // Loads from Supabase Storage (cloud)
-            file: 'nallampatti_cluster.kml',
-            enabled: true,
-            description: '5 villages with colored boundaries + markers'
-        },
-        {
-            name: 'Salem Taluks',
-            source: 'supabase',  // Loads from Supabase Storage (cloud)
-            file: 'salem_taluks.kml',
-            enabled: true,
-            description: 'Mettur, Omalur, Edappadi, Sankari, Yercaud taluks'
-        },
+    // NOTE: overlays are now expected to be stored in the DB table `kml_overlays` and
+    // loaded per-user from Supabase Storage. Keep this list empty to avoid loading
+    // legacy global files from the frontend. Use the admin UI or `kml_overlays` rows
+    // to control which overlays are available to which users.
+    overlays: [],
 
         // ═══════════════════════════════════════════════════════
         // METHOD 2: Supabase Storage (Recommended for Production!)

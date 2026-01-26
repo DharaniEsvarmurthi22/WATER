@@ -1,313 +1,268 @@
-// Supabase Authentication Manager
+// Supabase Authentication Manager (minimal changes to enable multi-user + profiles)
 class AuthManager {
     constructor() {
         this.supabase = null;
-        this.currentUser = null;
+        this.currentUser = null;      // Supabase auth user
+        this.userProfile = null;      // Row from public.user_profiles
 
-        // Initialize Supabase
         this.initSupabase();
 
-        // Check if we're on the login page
-        const isLoginPage = window.location.pathname.includes('login.html');
-
-        // Check authentication status
-        this.checkAuth(isLoginPage);
+        document.addEventListener('DOMContentLoaded', () => {
+            // Defer full auth check until DOM is ready
+            this.checkAuth();
+        });
     }
 
-    async initSupabase() {
+    initSupabase() {
         try {
-            if (window.ENV && window.ENV.SUPABASE_URL && window.ENV.SUPABASE_ANON_KEY) {
-                this.supabase = window.supabase.createClient(
-                    window.ENV.SUPABASE_URL,
-                    window.ENV.SUPABASE_ANON_KEY
-                );
-                console.log('✅ Supabase Auth initialized');
+            const url = window.ENV?.SUPABASE_URL || window.ENV_CONFIG?.SUPABASE_URL;
+            const key = window.ENV?.SUPABASE_ANON_KEY || window.ENV_CONFIG?.SUPABASE_ANON_KEY;
+            if (url && key && window.supabase) {
+                this.supabase = window.supabase.createClient(url, key);
+                console.log('✅ Supabase client ready');
 
-                // Get current session
-                const { data: { session } } = await this.supabase.auth.getSession();
-                if (session) {
-                    this.currentUser = session.user;
-                    console.log('✅ User session found:', this.currentUser.email);
-                }
+                // Attach auth state change listener
+                this.supabase.auth.onAuthStateChange((event, session) => {
+                    this.handleAuthStateChange(event, session);
+                });
             } else {
-                console.warn('⚠️ Supabase credentials not found');
+                console.warn('⚠️ Supabase config not found; auth will be disabled');
             }
-        } catch (error) {
-            console.error('❌ Failed to initialize Supabase Auth:', error);
+        } catch (err) {
+            console.error('❌ initSupabase error', err);
         }
     }
 
-    async checkAuth(isLoginPage) {
-        // Wait for Supabase to initialize
-        await this.initSupabase();
+    async checkAuth() {
+        // If supabase wasn't initialized, skip
+        if (!this.supabase) {
+            // Still wire up logout and login form listeners even when supabase config missing
+            this.setupEventListeners();
+            this.setupLogoutButton();
+            return;
+        }
 
-        // If we're authenticated and on login page, redirect to dashboard
+        try {
+            const { data: { session } } = await this.supabase.auth.getSession();
+            this.currentUser = session?.user || null;
+            if (this.currentUser) {
+                // Load user profile (if exists)
+                await this.loadUserProfile();
+            }
+        } catch (err) {
+            console.warn('Unable to get session:', err?.message || err);
+        }
+
+        // If currently on login page and authenticated, redirect to index
+        const isLoginPage = window.location.pathname.includes('login.html');
         if (this.isAuthenticated() && isLoginPage) {
             window.location.replace('index.html');
             return;
         }
 
-        // If we're not authenticated and not on login page, redirect to login
+        // If not authenticated and not on login page, redirect to login
         if (!this.isAuthenticated() && !isLoginPage) {
-            window.location.replace('login.html');
-            return;
+            // If the page provides a `showLogin` hook (embedded login), call it.
+            if (typeof window.showLogin === 'function') {
+                try { window.showLogin(); } catch (e) { console.warn('showLogin hook error', e); }
+            } else {
+                // Fallback to redirecting to the separate login page
+                window.location.replace('login.html');
+                return;
+            }
         }
 
-        // Setup event listeners
         this.setupEventListeners();
-    }
-
-    setupEventListeners() {
-        // Login form handler
-        const loginForm = document.getElementById('loginForm');
-        if (loginForm) {
-            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
-        }
-
-        // Logout button handler
-        const logoutButton = document.getElementById('logoutButton');
-        if (logoutButton) {
-            logoutButton.addEventListener('click', () => this.handleLogout());
-        }
-
-        // Password toggle handler
-        const togglePassword = document.getElementById('togglePassword');
-        const passwordInput = document.getElementById('password');
-        if (togglePassword && passwordInput) {
-            togglePassword.addEventListener('click', () => {
-                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-                passwordInput.setAttribute('type', type);
-                const icon = togglePassword.querySelector('i');
-                icon.classList.toggle('fa-eye');
-                icon.classList.toggle('fa-eye-slash');
-            });
-        }
-    }
-
-    initLoginPage() {
-        // Redirect if already logged in
-        if (this.currentUser) {
-            window.location.href = 'index.html';
-            return;
-        }
-
-        const loginForm = document.getElementById('loginForm');
-        const signupLink = document.getElementById('signupLink');
-
-        if (loginForm) {
-            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
-        }
-
-        if (signupLink) {
-            signupLink.addEventListener('click', (e) => this.toggleSignupMode(e));
-        }
-    }
-
-    initDashboardPage() {
-        // Redirect if not logged in
-        if (!this.currentUser) {
-            window.location.href = 'login.html';
-            return;
-        }
-
-        // Initialize dashboard-specific auth features
         this.setupLogoutButton();
         this.displayUserInfo();
     }
 
-    initLocationPage() {
-        // Redirect if not logged in
-        if (!this.currentUser) {
-            window.location.href = 'login.html';
+    setupEventListeners() {
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+        }
+
+        const signupLink = document.getElementById('signupLink');
+        if (signupLink) signupLink.addEventListener('click', (e) => this.toggleSignupMode(e));
+    }
+
+    async handleLogin(event) {
+        event.preventDefault();
+        if (!this.supabase) {
+            this.showMessage('Authentication not configured', 'error');
             return;
         }
 
-        this.setupLogoutButton();
-    }
+        const form = event.target;
+        const email = (form.querySelector('#email')?.value || '').trim();
+        const password = (form.querySelector('#password')?.value || '').trim();
+        const isSignup = form.dataset.mode === 'signup';
 
-    handleLogin(event) {
-        event.preventDefault();
+        if (!email || !password) {
+            this.showMessage('Please provide email and password', 'error');
+            return;
+        }
 
-        const username = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
+        try {
+            if (isSignup) {
+                const { data, error } = await this.supabase.auth.signUp({ email, password });
+                if (error) throw error;
+                // After signup, user must confirm email (depending on Supabase settings)
+                this.showMessage('Signup successful — check your email to confirm', 'success');
+            } else {
+                const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
+                if (error) throw error;
 
-        console.log('Login attempt:', { username, password }); // Debug log
+                this.currentUser = data.user || null;
+                localStorage.setItem('isAuthenticated', 'true');
+                await this.loadUserProfile();
 
-        if (username === this.ADMIN_USERNAME && password === this.ADMIN_PASSWORD) {
-            // Store auth state
-            localStorage.setItem('isAuthenticated', 'true');
-
-            // Show success message
-            this.showMessage('Login successful! Redirecting...', 'success');
-
-            // Update button state
-            const submitButton = event.target.querySelector('button[type="submit"]');
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i>Redirecting...';
-
-            console.log('Login successful, redirecting...'); // Debug log
-
-            // Redirect to dashboard
-            setTimeout(() => {
-                window.location.replace('index.html');
-            }, 1000);
-        } else {
-            console.log('Login failed: Invalid credentials'); // Debug log
-            this.showMessage('Invalid username or password', 'error');
+                this.showMessage('Login successful — redirecting', 'success');
+                setTimeout(() => window.location.replace('index.html'), 800);
+            }
+        } catch (err) {
+            console.error('Login error', err);
+            this.showMessage(err.message || 'Authentication failed', 'error');
         }
     }
 
     toggleSignupMode(event) {
         event.preventDefault();
-
         const form = document.getElementById('loginForm');
+        if (!form) return;
         const submitButton = form.querySelector('button[type="submit"]');
         const signupLink = document.getElementById('signupLink');
         const title = document.querySelector('h2');
-
         const isSignupMode = form.dataset.mode === 'signup';
-
         if (isSignupMode) {
-            // Switch to login mode
             form.dataset.mode = 'login';
-            submitButton.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>Sign In';
-            signupLink.textContent = 'Sign up here';
-            title.textContent = 'Water Data Dashboard';
+            if (submitButton) submitButton.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>Sign In';
+            if (signupLink) signupLink.textContent = 'Sign up here';
+            if (title) title.textContent = 'Water Data Dashboard';
         } else {
-            // Switch to signup mode
             form.dataset.mode = 'signup';
-            submitButton.innerHTML = '<i class="fas fa-user-plus mr-2"></i>Create Account';
-            signupLink.textContent = 'Back to login';
-            title.textContent = 'Create Account';
+            if (submitButton) submitButton.innerHTML = '<i class="fas fa-user-plus mr-2"></i>Create Account';
+            if (signupLink) signupLink.textContent = 'Back to login';
+            if (title) title.textContent = 'Create Account';
+        }
+    }
+
+    async loadUserProfile() {
+        if (!this.supabase || !this.currentUser) return;
+        try {
+            const { data, error } = await this.supabase.from('user_profiles').select('*').eq('user_id', this.currentUser.id).limit(1).maybeSingle();
+            if (error) {
+                console.warn('Could not load user_profiles:', error.message || error);
+                this.userProfile = null;
+                return;
+            }
+
+            if (data) {
+                this.userProfile = data;
+            } else {
+                // Create a default profile for new user
+                const insert = await this.supabase.from('user_profiles').insert([{ user_id: this.currentUser.id, email: this.currentUser.email, role: 'user', allowed_overlays: [] }]);
+                if (insert.error) {
+                    console.warn('Could not create user profile:', insert.error.message || insert.error);
+                    this.userProfile = null;
+                } else {
+                    this.userProfile = insert.data && insert.data[0] ? insert.data[0] : null;
+                }
+            }
+
+            // Save lightweight profile in localStorage for quick checks
+            try { localStorage.setItem('authProfile', JSON.stringify(this.userProfile || {})); } catch(e) {}
+        } catch (err) {
+            console.error('loadUserProfile error', err);
         }
     }
 
     async handleLogout() {
         try {
-            // Sign out from Supabase
             if (this.supabase) {
-                const { error } = await this.supabase.auth.signOut();
-                if (error) {
-                    console.error('❌ Logout error:', error);
-                }
+                await this.supabase.auth.signOut();
             }
-
-            // Clear all auth-related data
-            localStorage.clear();
-            sessionStorage.clear();
-            this.currentUser = null;
-
-            // Show logout message
-            this.showMessage('Logging out...', 'info');
-
-            console.log('✅ User logged out');
-
-            // Force reload and redirect to login page
-            window.location.href = 'login.html';
-        } catch (error) {
-            console.error('❌ Logout failed:', error);
-            // Still redirect even if logout fails
-            window.location.href = 'login.html';
+        } catch (e) {
+            console.warn('signOut error', e?.message || e);
         }
+        localStorage.removeItem('isAuthenticated');
+        localStorage.removeItem('authProfile');
+        this.currentUser = null;
+        this.userProfile = null;
+        window.location.href = 'login.html';
     }
 
     setupLogoutButton() {
         const logoutButton = document.getElementById('logoutButton');
         if (logoutButton) {
-            logoutButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.handleLogout();
-            });
+            logoutButton.addEventListener('click', (e) => { e.preventDefault(); this.handleLogout(); });
         }
     }
 
     displayUserInfo() {
         const userInfoElement = document.getElementById('userInfo');
-        if (userInfoElement && this.currentUser) {
+        const profile = this.userProfile;
+        const email = profile?.email || this.currentUser?.email || '';
+        if (userInfoElement && email) {
+            userInfoElement.classList.remove('hidden');
             userInfoElement.innerHTML = `
-                <div class="flex items-center space-x-2">
+                <div class="flex items-center">
                     <div class="w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
                         <i class="fas fa-user text-white text-sm"></i>
                     </div>
-                    <span class="text-sm font-medium text-gray-700">${this.currentUser.email}</span>
+                    <span class="ml-2 text-sm font-medium text-gray-700">${email}</span>
                 </div>
             `;
         }
     }
 
     handleAuthStateChange(event, session) {
-        console.log('Auth state changed:', event, session?.user?.email);
-
-        // Update current user
+        console.log('Auth state changed', event, session?.user?.email);
         this.currentUser = session?.user || null;
-
-        // Handle different auth events
-        switch (event) {
-            case 'SIGNED_IN':
-                console.log('User signed in');
-                break;
-            case 'SIGNED_OUT':
-                console.log('User signed out');
-                break;
-            case 'TOKEN_REFRESHED':
-                console.log('Token refreshed');
-                break;
+        if (this.currentUser) this.loadUserProfile();
+        else {
+            this.userProfile = null;
+            try { localStorage.removeItem('authProfile'); } catch(e){}
         }
     }
 
     showMessage(message, type = 'info') {
         const container = document.getElementById('messageContainer');
         const content = document.getElementById('messageContent');
-
         if (!container || !content) return;
-
-        const colors = {
-            success: 'bg-green-100 text-green-800 border-green-200',
-            error: 'bg-red-100 text-red-800 border-red-200',
-            info: 'bg-blue-100 text-blue-800 border-blue-200',
-            warning: 'bg-yellow-100 text-yellow-800 border-yellow-200'
-        };
-
-        const icons = {
-            success: 'fas fa-check-circle',
-            error: 'fas fa-exclamation-circle',
-            info: 'fas fa-info-circle',
-            warning: 'fas fa-exclamation-triangle'
-        };
-
+        const colors = { success: 'bg-green-100 text-green-800 border-green-200', error: 'bg-red-100 text-red-800 border-red-200', info: 'bg-blue-100 text-blue-800 border-blue-200' };
         content.className = `p-3 rounded-lg text-sm border ${colors[type] || colors.info}`;
-        content.innerHTML = `
-            <div class="flex items-center">
-                <i class="${icons[type] || icons.info} mr-2"></i>
-                ${message}
-            </div>
-        `;
-
+        content.innerHTML = `<div class="flex items-center"><i class="fas fa-info-circle mr-2"></i>${message}</div>`;
         container.classList.remove('hidden');
-
-        // Auto-hide after 5 seconds
-        setTimeout(() => {
-            container.classList.add('hidden');
-        }, 5000);
+        setTimeout(() => container.classList.add('hidden'), 4000);
     }
 
-    // Utility method to check if user is authenticated
     isAuthenticated() {
-        return localStorage.getItem('isAuthenticated') === 'true' || this.currentUser !== null;
+        return !!(localStorage.getItem('isAuthenticated') === 'true' || this.currentUser);
     }
 
-    // Get current user
+    // Returns a combined object with auth and profile for convenience
     getCurrentUser() {
-        return this.currentUser;
+        return { auth: this.currentUser, profile: this.userProfile };
     }
 
-    // Get Supabase client for other modules
-    getSupabaseClient() {
-        return this.supabase;
-    }
+    getSupabaseClient() { return this.supabase; }
 }
 
-// Initialize auth manager when DOM is loaded
+// Expose singleton
 document.addEventListener('DOMContentLoaded', () => {
-    window.authManager = new AuthManager();
+    if (!window.authManager) window.authManager = new AuthManager();
+    // Defensive fallback: ensure any logout button invokes the auth manager
+    document.addEventListener('click', (e) => {
+        try {
+            const btn = e.target.closest && e.target.closest('#logoutButton');
+            if (btn && window.authManager && typeof window.authManager.handleLogout === 'function') {
+                e.preventDefault();
+                window.authManager.handleLogout();
+            }
+        } catch (err) {
+            // ignore
+        }
+    });
 });

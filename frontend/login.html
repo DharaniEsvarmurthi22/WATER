@@ -160,6 +160,19 @@
             font-size: 13px;
             margin-top: 24px;
         }
+        /* Hide browser-native password reveal/clear buttons so only custom toggle shows */
+        .password-wrapper input::-ms-reveal,
+        .password-wrapper input::-ms-clear {
+            display: none;
+        }
+        .password-wrapper input::-webkit-credentials-auto-fill-button,
+        .password-wrapper input::-webkit-textfield-decoration-container,
+        .password-wrapper input::-webkit-clear-button {
+            display: none !important;
+            visibility: hidden !important;
+            -webkit-appearance: none !important;
+        }
+        .password-wrapper input { padding-right: 44px; }
     </style>
 </head>
 
@@ -170,8 +183,9 @@
             <h1>JalSuraksha Insight Grid</h1>
             <p class="subtitle">Powered by EyeNetAqua's Water Surveillance Matrix</p>
         </div>
-        <form id="loginForm">
+        <form id="loginForm" onsubmit="return false;">
             <div class="error-message" id="errorMessage"></div>
+            <div id="loginStatus" style="margin-top:8px;margin-bottom:8px;color:#065f46;font-size:14px;display:none;"></div>
             <div class="form-group">
                 <label for="email">Email Address</label>
                 <input type="email" id="email" placeholder="user@example.com" required autocomplete="email">
@@ -188,40 +202,174 @@
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                             <circle cx="12" cy="12" r="3"></circle>
                         </svg>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                            id="eyeOffIcon" style="display: none;">
-                            <path
-                                d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24">
-                            </path>
-                            <line x1="1" y1="1" x2="23" y2="23"></line>
-                        </svg>
+                        <!-- single eye icon only -->
                     </button>
                 </div>
             </div>
-            <button type="submit" class="btn-submit" id="submitBtn">Sign In</button>
-        </form>
-        <p class="footer-text">Sign in to access the water monitoring platform</p>
+            <button type="button" class="btn-submit" id="submitBtn">Sign In</button>
+            </form>
+            <p style="text-align:center; margin-top:12px;">
+                <a href="#" id="signupLink" style="color:#064e3b; text-decoration:underline; font-weight:600;">Don't have an account? Create one</a>
+            </p>
+            <p class="footer-text">Sign in to access the water monitoring platform</p>
     </div>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="env-config.js"></script>
     <script>
-        let supabase;
+        let supClient;
+
+        // load a script dynamically (used as fallback if CDN blocked)
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = src;
+                s.onload = () => resolve();
+                s.onerror = (e) => reject(e);
+                document.head.appendChild(s);
+            });
+        }
+
         (async function () {
             try {
-                if (window.ENV && window.ENV.SUPABASE_URL && window.ENV.SUPABASE_ANON_KEY) {
-                    supabase = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY);
-                    console.log("Supabase initialized");
-                    const { data: { session } } = await supabase.auth.getSession();
-                    if (session) { window.location.href = "index.html"; }
+                const cfg = window.ENV || window.ENV_CONFIG || {};
+                const url = cfg.SUPABASE_URL || (cfg.SUPABASE && cfg.SUPABASE.SUPABASE_URL) || null;
+                const key = cfg.SUPABASE_ANON_KEY || (cfg.SUPABASE && cfg.SUPABASE.SUPABASE_ANON_KEY) || null;
+
+                // Ensure Supabase SDK is available; try fallback if not
+                if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+                    console.warn('Supabase SDK not present — attempting fallback load');
+                    try {
+                        await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
+                        console.log('Loaded Supabase SDK from fallback CDN');
+                    } catch (err) {
+                        console.warn('Fallback Supabase load failed', err);
+                    }
+                }
+
+                const hasLib = !!window.supabase && typeof window.supabase.createClient === 'function';
+                if (url && key && hasLib) {
+                    supClient = window.supabase.createClient(url, key);
+                    console.log('Supabase initialized', { url });
+                    const { data: { session } } = await supClient.auth.getSession();
+                    console.log('Initial session check', session);
+                    // NOTE: Removed automatic redirect to index.html so the login page
+                    // remains the default landing page even when a Supabase session exists.
                 } else {
-                    showError("Configuration error. Please contact administrator.");
+                    const cfgPresent = !!(window.ENV || window.ENV_CONFIG || window.ENV?.SUPABASE_URL);
+                    const maskedKey = key ? (String(key).slice(0,4) + '...' + String(key).slice(-4)) : '(none)';
+                    const diag = `Supabase config present: ${cfgPresent}\nSUPABASE_URL: ${url ? url : '(none)'}\nSUPABASE_ANON_KEY: ${key ? maskedKey : '(none)'}\nSupabase lib loaded: ${hasLib}`;
+                    console.warn('Supabase init failed', diag);
+                    showError('Configuration error. See console for details.');
+                    try { console.info('Login config diag:\n' + diag); } catch (e) {}
                 }
             } catch (error) {
-                console.error("Init error:", error);
-                showError("System error. Please contact administrator.");
+                console.error('Init error:', error);
+                showError('System error. Please contact administrator.');
             }
         })();
+        // Default form mode = login; can be toggled to 'signup'
+        const loginForm = document.getElementById("loginForm");
+        loginForm.dataset.mode = 'login';
+
+        // Resilient global fallback so the button works even if event listeners fail to attach
+        window.__performLoginAttempt = async function(isSignupMode) {
+            try {
+                const email = document.getElementById('email')?.value.trim() || '';
+                const password = document.getElementById('password')?.value || '';
+                if (!email || !password) {
+                    showError('Please enter both email and password');
+                    return;
+                }
+
+                // Ensure supabase client
+                if (!supClient) {
+                    const cfg = window.ENV_CONFIG || window.ENV || {};
+                    const url = cfg.SUPABASE_URL || (cfg.SUPABASE && cfg.SUPABASE.SUPABASE_URL);
+                    const key = cfg.SUPABASE_ANON_KEY || (cfg.SUPABASE && cfg.SUPABASE.SUPABASE_ANON_KEY);
+                    if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+                        try {
+                            const s = document.createElement('script');
+                            s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+                            await new Promise((res, rej) => { s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+                        } catch (e) { console.warn('fallback supabase load failed', e); }
+                    }
+                    if (window.supabase && typeof window.supabase.createClient === 'function' && url && key) {
+                        supClient = window.supabase.createClient(url, key);
+                    } else {
+                        showError('Authentication not configured. See console for details.');
+                        return;
+                    }
+                }
+
+                const statusEl = document.getElementById('loginStatus');
+                function setStatus(t) { if(statusEl){ statusEl.style.display='block'; statusEl.textContent = t; } }
+                setStatus(isSignupMode ? 'Creating account...' : 'Signing in...');
+
+                if (isSignupMode) {
+                    const { data, error } = await supClient.auth.signUp({ email, password });
+                    console.log('Fallback signUp', data, error);
+                    if (error) { showError(error.message || 'Signup failed'); return; }
+                    if (data?.session || data?.user) { localStorage.setItem('isAuthenticated','true'); window.location.href='index.html'; return; }
+                    showError('Signup successful. Check your email to confirm.');
+                } else {
+                    const { data, error } = await supClient.auth.signInWithPassword({ email, password });
+                    console.log('Fallback signIn', data, error);
+                    if (error) { showError(error.message || 'Invalid email or password'); return; }
+                    if (data?.session || data?.user) { localStorage.setItem('isAuthenticated','true'); window.location.href='index.html'; return; }
+                    showError('Sign in did not return a session. Check console for details.');
+                }
+            } catch (e) {
+                console.error('Fallback auth error', e);
+                showError('Authentication failed. See console.');
+            }
+        };
+
+        // Wire the visible button to the resilient fallback
+        try {
+            const submitBtnEl = document.getElementById('submitBtn');
+            if (submitBtnEl) {
+                submitBtnEl.addEventListener('click', (e) => {
+                    const isSignup = loginForm.dataset.mode === 'signup';
+                    // clear previous messages
+                    try { document.getElementById('errorMessage').classList.remove('show'); } catch(e){}
+                    try { const st = document.getElementById('loginStatus'); if(st){ st.style.display='block'; st.textContent = isSignup ? 'Creating account...' : 'Signing in...'; } } catch(e){}
+                    window.__performLoginAttempt(isSignup);
+                });
+            }
+        } catch (e) { console.warn('Could not attach click handler to submit button', e); }
+
+        // allow Enter key in inputs to trigger login without submitting the form
+        try {
+            ['email','password'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('keydown', (ev) => {
+                    if (ev.key === 'Enter') {
+                        ev.preventDefault();
+                        const isSignup = loginForm.dataset.mode === 'signup';
+                        window.__performLoginAttempt(isSignup);
+                    }
+                });
+            });
+        } catch(e){ console.warn('could not attach enter key handlers', e); }
+
+        const signupLink = document.getElementById('signupLink');
+        signupLink.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            const isSignup = loginForm.dataset.mode === 'signup';
+            if (isSignup) {
+                // switch to login
+                loginForm.dataset.mode = 'login';
+                document.getElementById('submitBtn').textContent = 'Sign In';
+                signupLink.textContent = "Don't have an account? Create one";
+            } else {
+                // switch to signup
+                loginForm.dataset.mode = 'signup';
+                document.getElementById('submitBtn').textContent = 'Create Account';
+                signupLink.textContent = 'Back to sign in';
+            }
+        });
+
         document.getElementById("loginForm").addEventListener("submit", async (e) => {
             e.preventDefault();
             hideError();
@@ -233,40 +381,107 @@
                 return;
             }
             submitBtn.disabled = true;
-            submitBtn.textContent = "Signing in...";
+            const isSignup = loginForm.dataset.mode === 'signup';
+            submitBtn.textContent = isSignup ? 'Creating account...' : 'Signing in...';
             try {
-                const { data, error } = await supabase.auth.signInWithPassword({ email: email, password: password });
-                if (error) {
-                    showError("Invalid email or password");
-                    return;
+                // Ensure supabase client is initialized; try to create it now if possible
+                if (!supClient) {
+                    console.warn('Supabase client missing at submit — attempting to initialize now');
+                    try {
+                        const cfg = window.ENV_CONFIG || window.ENV || {};
+                        const url = cfg.SUPABASE_URL || cfg.SUPABASE?.SUPABASE_URL;
+                        const key = cfg.SUPABASE_ANON_KEY || cfg.SUPABASE?.SUPABASE_ANON_KEY;
+                        console.log('Attempting runtime init', { url: !!url, hasKey: !!key, hasLib: !!window.supabase });
+                        if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+                            // try fallback loader
+                            try {
+                                await (async function loadFallback(){
+                                    return new Promise((resolve, reject) => {
+                                        const s = document.createElement('script');
+                                        s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+                                        s.onload = () => resolve();
+                                        s.onerror = (e) => reject(e);
+                                        document.head.appendChild(s);
+                                    });
+                                })();
+                                console.log('Supabase SDK loaded via fallback');
+                            } catch (e) {
+                                console.warn('Could not load Supabase SDK fallback', e);
+                            }
+                        }
+                        if (window.supabase && typeof window.supabase.createClient === 'function' && url && key) {
+                            supClient = window.supabase.createClient(url, key);
+                            console.log('Supabase client initialized at submit');
+                        } else {
+                            console.error('Unable to initialize Supabase client at submit', { url: !!url, hasKey: !!key, hasLib: !!window.supabase });
+                            showError('Authentication not configured. Check console for details.');
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = isSignup ? 'Create Account' : 'Sign In';
+                            return;
+                        }
+                    } catch (e) {
+                        console.error('Runtime supabase init failed', e);
+                        showError('Authentication initialization failed. See console.');
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = isSignup ? 'Create Account' : 'Sign In';
+                        return;
+                    }
                 }
-                if (data.session) {
-                    localStorage.setItem("isAuthenticated", "true");
-                    window.location.href = "index.html";
+                if (isSignup) {
+                    // Sign up flow
+                    const { data, error } = await supClient.auth.signUp({ email: email, password: password });
+                    console.log('Supabase signUp response:', { data, error });
+                    if (error) {
+                        showError(error.message || 'Signup failed');
+                        return;
+                    }
+                    // If Supabase autoconfirms, a session or user may be present. Redirect immediately.
+                    if (data?.session || data?.user) {
+                        localStorage.setItem('isAuthenticated', 'true');
+                        console.log('Signup returned session/user, redirecting to index.html');
+                        window.location.href = 'index.html';
+                        return;
+                    }
+                    // Otherwise, prompt the user to sign in (or confirm email if required) and switch form back to login mode.
+                    showError('Signup successful. If email confirmation is required, check your inbox. Otherwise, try signing in now.');
+                    loginForm.dataset.mode = 'login';
+                    document.getElementById('submitBtn').textContent = 'Sign In';
+                    signupLink.textContent = "Don't have an account? Create one";
+                } else {
+                    const { data, error } = await supClient.auth.signInWithPassword({ email: email, password: password });
+                    console.log('Supabase signIn response:', { data, error });
+                    if (error) {
+                        showError(error.message || 'Invalid email or password');
+                        return;
+                    }
+                    // Accept either session or user presence as successful login
+                    if (data?.session || data?.user) {
+                        localStorage.setItem('isAuthenticated', 'true');
+                        console.log('Redirecting to index.html, session/user found', { session: data?.session, user: data?.user });
+                        window.location.href = 'index.html';
+                    } else {
+                        showError('Sign in did not return a session. Check console for details.');
+                    }
                 }
             } catch (error) {
-                console.error("Login error:", error);
-                showError("Login failed. Please try again.");
+                console.error("Auth error:", error);
+                showError("Authentication failed. Please try again.");
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.textContent = "Sign In";
+                submitBtn.textContent = isSignup ? 'Create Account' : 'Sign In';
             }
         });
 
-        // Toggle password visibility
+        // Toggle password visibility (single icon)
         document.getElementById("togglePassword").addEventListener("click", function () {
             const passwordInput = document.getElementById("password");
             const eyeIcon = document.getElementById("eyeIcon");
-            const eyeOffIcon = document.getElementById("eyeOffIcon");
-
             if (passwordInput.type === "password") {
                 passwordInput.type = "text";
-                eyeIcon.style.display = "none";
-                eyeOffIcon.style.display = "block";
+                eyeIcon.style.opacity = '0.7';
             } else {
                 passwordInput.type = "password";
-                eyeIcon.style.display = "block";
-                eyeOffIcon.style.display = "none";
+                eyeIcon.style.opacity = '1';
             }
         });
 
@@ -274,11 +489,28 @@
             const errorEl = document.getElementById("errorMessage");
             errorEl.textContent = message;
             errorEl.classList.add("show");
+            try { const st = document.getElementById('loginStatus'); if (st) { st.style.display='block'; st.textContent = 'Error: ' + message; } } catch(e){}
+            console.error('UI showError:', message);
         }
         function hideError() {
             const errorEl = document.getElementById("errorMessage");
             errorEl.classList.remove("show");
+            try { const st = document.getElementById('loginStatus'); if (st) { st.style.display='none'; st.textContent = ''; } } catch(e){}
         }
+
+        // Show runtime errors in the small status area so users see why nothing happened
+        window.addEventListener('error', function (evt) {
+            try {
+                const msg = evt && evt.message ? evt.message : String(evt);
+                showError('Runtime error: ' + msg);
+            } catch (e) { console.error('error handler failed', e); }
+        });
+        window.addEventListener('unhandledrejection', function (evt) {
+            try {
+                const reason = evt && evt.reason ? (evt.reason.message || JSON.stringify(evt.reason)) : String(evt);
+                showError('Unhandled promise rejection: ' + reason);
+            } catch (e) { console.error('rejection handler failed', e); }
+        });
     </script>
 </body>
 

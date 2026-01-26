@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Water Dashboard - Real-time Monitoring</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
+    <script src="https://unpkg.com/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'water-blue': '#0ea5e9',
+                        'water-cyan': '#06b6d4',
+                        'water-teal': '#0d9488'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-gray-50 overflow-hidden">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200 relative z-50">
+        <div class="px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo and Title -->
+                <div class="flex items-center space-x-3">
+                    <div class="flex items-center justify-center">
+                        <img src="eyenetaqua-logo.jpg" alt="EyeNetAqua"
+                            style="height: 40px; width: auto; max-width: 150px; object-fit: contain;">
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-900">JalSuraksha Insight Grid</h1>
+                        <p class="text-xs text-gray-500">Powered by EyeNetAqua's Water Surveillance Matrix</p>
+                    </div>
+                </div>
+
+                <!-- Status Indicator -->
+                <div class="flex items-center space-x-4">
+                    <div id="connectionStatus" class="flex items-center space-x-2">
+                        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span class="text-sm text-gray-600">Connected</span>
+                    </div>
+
+                    <!-- User Info -->
+                    <div id="userInfo" class="hidden sm:block"></div>
+
+                    <!-- Logout Button -->
+                    <button id="logoutButton"
+                        class="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span class="hidden sm:inline">Logout</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Embedded Login Modal (shown when not authenticated) -->
+    <div id="embeddedLogin" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 class="text-lg font-semibold mb-3">Sign In</h2>
+            <div id="embeddedError" class="text-sm text-red-600 mb-3 hidden"></div>
+            <form id="embeddedLoginForm">
+                <label class="block text-sm mb-1">Email</label>
+                <input id="embeddedEmail" type="email" class="w-full p-2 border rounded mb-3" required />
+                <label class="block text-sm mb-1">Password</label>
+                <input id="embeddedPassword" type="password" class="w-full p-2 border rounded mb-3" required />
+                <div class="flex gap-2">
+                    <button id="embeddedSignIn" type="submit" class="px-3 py-2 bg-water-blue text-white rounded">Sign In</button>
+                    <button id="embeddedSignUp" type="button" class="px-3 py-2 bg-gray-100 rounded">Create Account</button>
+                    <button id="embeddedCancel" type="button" class="ml-auto px-3 py-2 bg-white border rounded">Close</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="dashboard-container">
+        <!-- Left Panel -->
+        <div class="left-panel">
+            <!-- Search -->
+            <div class="mb-4">
+                <div class="relative">
+                    <input type="text" id="locationSearch" placeholder="Search locations..."
+                        class="w-full px-4 py-2 pl-10 pr-4 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent"
+                        autocomplete="off">
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                </div>
+            </div>
+
+            <!-- Locations List (Hidden) -->
+            <div class="location-list hidden" id="locationsList">
+                <!-- Location items will be dynamically added here -->
+            </div>
+
+            <!-- Controls Header -->
+            <div class="mt-6 pb-4 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Map Controls</h2>
+
+                <!-- Map Style Toggle -->
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Map Style</label>
+                        <div class="flex bg-gray-100 rounded-lg p-1">
+                            <button id="streetViewBtn"
+                                class="flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors bg-white text-water-blue shadow-sm">
+                                <i class="fas fa-road mr-2"></i>Street
+                            </button>
+                            <button id="satelliteViewBtn"
+                                class="flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors text-gray-600 hover:text-gray-900">
+                                <i class="fas fa-satellite mr-2"></i>Satellite
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Layer Controls -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Data Layers</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input type="checkbox" id="sensorsLayer" checked
+                                    class="rounded border-gray-300 text-water-blue focus:ring-water-blue">
+                                <span class="ml-2 text-sm text-gray-700">Village Markers</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="overlaysLayer" checked
+                                    class="rounded border-gray-300 text-water-blue focus:ring-water-blue">
+                                <span class="ml-2 text-sm text-gray-700">KML Overlays</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Upload Section -->
+            <div class="p-4 border-b border-gray-200">
+                <h3 class="text-sm font-medium text-gray-700 mb-3">Upload Overlays</h3>
+                <label for="fileUpload"
+                    class="w-full px-3 py-2 bg-water-blue text-white text-sm rounded-lg hover:bg-water-cyan transition-colors cursor-pointer flex items-center justify-center">
+                    <i class="fas fa-upload mr-2"></i>Choose Files
+                </label>
+                <input type="file" id="fileUpload" accept=".kml,.geojson,.json" multiple class="hidden">
+                <div id="uploadedFilesList" class="mt-3 space-y-2">
+                    <!-- Uploaded files will appear here -->
+                </div>
+                <div id="message" class="mt-2 text-sm text-green-600"></div>
+            </div>
+
+            <!-- User / Admin Overlays Panel -->
+            <div class="p-4 border-b border-gray-200" id="userOverlaysPanel">
+                <h3 class="text-sm font-medium text-gray-700 mb-3">Your Overlays</h3>
+                <!-- Admin: user selector -->
+                <div id="adminPanel" class="hidden mb-3">
+                    <label class="text-xs text-gray-600 mb-1">Select User</label>
+                    <select id="adminUserSelect" class="w-full text-sm p-2 border rounded">
+                        <option value="">-- Select user --</option>
+                    </select>
+                    <button id="adminLoadUserBtn" class="mt-2 w-full px-3 py-2 bg-water-blue text-white rounded text-sm">Load User Overlays</button>
+                    <!-- admin debug removed in production -->
+                </div>
+
+                <div id="userOverlayList" class="space-y-2 text-sm">
+                    <!-- Per-user overlays will be populated here -->
+                </div>
+            </div>
+
+
+            <!-- DEVICE LINKING SECTION -->
+            <div class="p-4 border-b border-gray-200" style="background: #e3f2fd; border: 3px solid #2196F3; margin: 10px 0;">
+                <h3 class="text-base font-bold text-blue-900 mb-4" style="font-size: 18px; text-align: center;">
+                     DEVICE LINKING
+                </h3>
+                
+                <div style="background: white; padding: 15px; border-radius: 8px;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; font-weight: bold; margin-bottom: 5px;">Device Name</label>
+                        <input type="text" id="deviceIdInput" placeholder="ESP32-SALEM-001"
+                            style="width: 100%; padding: 10px; font-size: 14px; border: 2px solid #2196F3; border-radius: 6px;">
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; font-weight: bold; margin-bottom: 5px;">Password</label>
+                        <input type="password" id="devicePasswordInput" placeholder="Enter password"
+                            style="width: 100%; padding: 10px; font-size: 14px; border: 2px solid #2196F3; border-radius: 6px;">
+                    </div>
+
+                    <button id="claimDeviceBtn"
+                        style="width: 100%; padding: 12px; background: #2196F3; color: white; font-size: 16px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer;">
+                        LINK DEVICE
+                    </button>
+
+                    <div id="claimMessageSidebar" class="hidden" style="margin-top: 10px; padding: 10px; border-radius: 4px;"></div>
+                </div>
+
+                <div id="claimedDevicesListSidebar" style="margin-top: 15px;"></div>
+            </div>
+            <!-- Statistics Panel -->
+            <div class="flex-1 p-4 overflow-y-auto">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-medium text-gray-700">Live Status</h3>
+                    <select id="statsLocationFilter"
+                        class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
+                        <option value="all">All Locations</option>
+                        <option value="ukkadam">Ukkadam</option>
+                        <option value="singanallur">Singanallur</option>
+                        <option value="redhills">Red Hills</option>
+                        <option value="porur">Porur</option>
+                    </select>
+                </div>
+                <div id="statsContainer" class="space-y-3">
+                    <!-- Stats will be dynamically populated -->
+                </div>
+
+                <!-- Recent Readings -->
+                <div class="mt-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-sm font-medium text-gray-700">Recent Readings</h4>
+                    </div>
+                    <!-- Filter dropdowns -->
+                    <div class="flex gap-2 mb-2">
+                        <select id="locationFilter"
+                            class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
+                            <option value="all">All Locations</option>
+                            <option value="ukkadam">Ukkadam</option>
+                            <option value="singanallur">Singanallur</option>
+                            <option value="redhills">Red Hills</option>
+                            <option value="porur">Porur</option>
+                        </select>
+                        <select id="sensorFilter"
+                            class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-water-blue">
+                            <option value="all">All Sensors</option>
+                            <option value="ph">pH</option>
+                            <option value="turbidity">Turbidity</option>
+                            <option value="temperature">Temperature</option>
+                            <option value="tds">TDS</option>
+                        </select>
+                    </div>
+                    <div id="recentReadings" class="space-y-2 max-h-60 overflow-y-auto">
+                        <!-- Dynamic content -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Container -->
+        <div class="map-container">
+            <div id="map"></div>
+
+            <!-- Map Loading Overlay -->
+            <div id="mapLoading" class="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-30">
+                <div class="text-center p-4 rounded-lg shadow-lg bg-white">
+                    <div
+                        class="w-12 h-12 border-4 border-water-blue border-t-transparent rounded-full animate-spin mx-auto mb-4">
+                    </div>
+                    <p class="text-gray-600">Loading map...</p>
+                </div>
+            </div>
+
+            <!-- Map Controls -->
+            <div class="absolute top-4 right-4 space-y-2 z-20">
+                <button id="fullscreenBtn"
+                    class="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900 transition-colors"
+                    title="Toggle Fullscreen">
+                    <i class="fas fa-expand"></i>
+                </button>
+                <button id="locateBtn"
+                    class="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900 transition-colors"
+                    title="Find My Location">
+                    <i class="fas fa-crosshairs"></i>
+                </button>
+                <button id="refreshBtn"
+                    class="w-10 h-10 bg-white rounded-lg shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900 transition-colors"
+                    title="Refresh Data">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+
+            <!-- Colorscale Legend Panel -->
+            <div id="colorscaleLegend" class="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30 collapsed"
+                style="width: 280px;">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-900">
+                        <i class="fas fa-palette mr-2"></i>Color Scale
+                    </h3>
+                    <button id="toggleColorscale" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+
+                <div id="colorscaleContent">
+                    <!-- Parameter Selection -->
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Parameter</label>
+                        <select id="colorParameter"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
+                            <option value="ph">pH Level</option>
+                            <option value="turbidity">Turbidity (NTU)</option>
+                            <option value="temperature">Temperature (°C)</option>
+                            <option value="tds">TDS (ppm)</option>
+                        </select>
+                    </div>
+
+                    <!-- Color Theme Selection -->
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Color Theme</label>
+                        <select id="colorTheme"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
+                            <option value="custom">Parameter Palette (default)</option>
+                            <option value="hsv">HSV</option>
+                            <option value="hot">Hot</option>
+                            <option value="cool">Cool</option>
+                            <option value="jet">Jet</option>
+                            <option value="gray">Gray</option>
+                            <option value="bone">Bone</option>
+                            <option value="copper">Copper</option>
+                            <option value="pink">Pink</option>
+                            <option value="spring">Spring</option>
+                            <option value="summer">Summer</option>
+                            <option value="autumn">Autumn</option>
+                            <option value="winter">Winter</option>
+                            <option value="colorcube">Colorcube</option>
+                        </select>
+                    </div>
+
+                    <!-- Time Interval for Average Calculation -->
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Time Interval (for Average)</label>
+                        <select id="colorTimeInterval"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-water-blue focus:border-transparent">
+                            <option value="1h">Last Hour</option>
+                            <option value="6h">Last 6 Hours</option>
+                            <option value="24h" selected>Last 24 Hours</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="30d">Last 30 Days</option>
+                            <option value="3m">Last 3 Months</option>
+                            <option value="6m">Last 6 Months</option>
+                            <option value="1y">Last 1 Year</option>
+                        </select>
+                    </div>
+
+                    <!-- Color Gradient Display -->
+                    <div class="mb-3">
+                        <div class="relative">
+                            <div class="h-8 rounded-lg" id="colorGradient"
+                                style="background: linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444);">
+                            </div>
+                        </div>
+                        <div class="flex justify-between mt-1">
+                            <span class="text-xs text-gray-500" id="paramMinLabel">0</span>
+                            <span class="text-xs text-gray-500" id="paramMaxLabel">14</span>
+                        </div>
+                    </div>
+
+                    <!-- Min Value Slider -->
+                    <div class="mb-3">
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="text-xs font-medium text-gray-700">
+                                Min Value: <span id="minValueDisplay" class="text-water-blue font-semibold">0</span>
+                            </label>
+                            <div class="flex gap-1">
+                                <button id="minDecrement"
+                                    class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                                    title="Decrease by 0.5">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <button id="minIncrement"
+                                    class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                                    title="Increase by 0.5">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <input type="range" id="minSlider" min="0" max="100" value="0" step="0.1"
+                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider">
+                    </div>
+
+                    <!-- Max Value Slider -->
+                    <div class="mb-3">
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="text-xs font-medium text-gray-700">
+                                Max Value: <span id="maxValueDisplay" class="text-water-blue font-semibold">100</span>
+                            </label>
+                            <div class="flex gap-1">
+                                <button id="maxDecrement"
+                                    class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                                    title="Decrease by 0.5">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <button id="maxIncrement"
+                                    class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                                    title="Increase by 0.5">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <input type="range" id="maxSlider" min="0" max="100" value="100" step="0.1"
+                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider">
+                    </div>
+
+                    <!-- Apply Button -->
+                    <button id="applyColorscale"
+                        class="w-full px-3 py-2 bg-water-blue text-white text-sm font-medium rounded-lg hover:bg-water-cyan transition-colors">
+                        <i class="fas fa-check mr-2"></i>Apply Color Scale
+                    </button>
+
+                    <!-- Auto-scale Option -->
+                    <label class="flex items-center mt-3 text-xs text-gray-600 cursor-pointer">
+                        <input type="checkbox" id="autoScale"
+                            class="mr-2 rounded border-gray-300 text-water-blue focus:ring-water-blue">
+                        Auto-adjust to data range
+                    </label>
+                </div>
+            </div>
+
+            <!-- Zoom Level Indicator -->
+            <div class="absolute bottom-4 right-4 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs z-20">
+                Zoom: <span id="zoomLevel">4</span>
+            </div>
+
+            <!-- Map Error Message -->
+            <div id="mapError"
+                class="hidden absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-30">
+                <div class="text-center p-6 rounded-lg shadow-lg bg-white max-w-md">
+                    <div class="text-red-500 mb-4">
+                        <i class="fas fa-exclamation-circle text-4xl"></i>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Map Loading Error</h3>
+                    <p class="text-gray-600 mb-4" id="mapErrorMessage">Unable to load the map. Please check your
+                        connection and try again.</p>
+                    <button onclick="window.location.reload()"
+                        class="px-4 py-2 bg-water-blue text-white rounded-lg hover:bg-water-cyan transition-colors">
+                        <i class="fas fa-redo mr-2"></i>Reload Page
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Popup Template (Hidden) -->
+    <div id="popupTemplate" class="hidden">
+        <div class="p-3 min-w-64">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-gray-900">Sensor Location</h3>
+                <button class="text-gray-400 hover:text-gray-600" onclick="closePopup()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Current Value:</span>
+                    <span class="font-medium" id="popupValue">--</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Last Update:</span>
+                    <span class="text-gray-900" id="popupTime">--</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Status:</span>
+                    <span class="font-medium" id="popupStatus">--</span>
+                </div>
+            </div>
+            <button
+                class="w-full mt-3 px-3 py-2 bg-water-blue text-white rounded-lg hover:bg-water-cyan transition-colors text-sm"
+                onclick="openLocationDashboard()">
+                <i class="fas fa-chart-line mr-2"></i>View Details
+            </button>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="env-config.js"></script>
+    <script src="config.js"></script>
+    <script src="overlays-config.js"></script>
+    <script src="colorscale.js"></script>
+    <script>
+        (async function(){
+            try {
+                const url = window.ENV?.SUPABASE_URL || window.ENV_CONFIG?.SUPABASE_URL;
+                const key = window.ENV?.SUPABASE_ANON_KEY || window.ENV_CONFIG?.SUPABASE_ANON_KEY;
+                if (!url || !key || !window.supabase) return;
+                const client = window.supabase.createClient(url, key);
+                const { data: { session } } = await client.auth.getSession();
+                if (!session) {
+                    // No active Supabase session — redirect to login page
+                    window.location.replace('login.html');
+                }
+            } catch (e) {
+                console.warn('Auth redirect check failed', e);
+            }
+        })();
+    </script>
+    <script src="auth.js"></script>
+    <script>
+        // Expose showLogin hook for auth.js
+        window.showLogin = function() {
+            const modal = document.getElementById('embeddedLogin');
+            if (modal) modal.classList.remove('hidden');
+        };
+
+        (function wireEmbeddedLogin(){
+            const form = document.getElementById('embeddedLoginForm');
+            const err = document.getElementById('embeddedError');
+            const modal = document.getElementById('embeddedLogin');
+            const cancel = document.getElementById('embeddedCancel');
+            const signupBtn = document.getElementById('embeddedSignUp');
+            if (!form) return;
+
+            function showErr(msg){ if(err){ err.textContent = msg; err.classList.remove('hidden'); } }
+            function hideErr(){ if(err){ err.textContent=''; err.classList.add('hidden'); } }
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault(); hideErr();
+                const email = document.getElementById('embeddedEmail').value.trim();
+                const password = document.getElementById('embeddedPassword').value;
+                if (!email || !password) return showErr('Enter email and password');
+                try {
+                    const client = window.authManager ? window.authManager.getSupabaseClient() : (window.supabase && window.ENV_CONFIG ? window.supabase.createClient(window.ENV_CONFIG.SUPABASE_URL, window.ENV_CONFIG.SUPABASE_ANON_KEY) : null);
+                    if (!client) return showErr('Auth client not available');
+                    const { data, error } = await client.auth.signInWithPassword({ email, password });
+                    console.log('embedded signIn', data, error);
+                    if (error) return showErr(error.message || 'Sign in failed');
+                    // refresh profile via authManager if available
+                    if (window.authManager && typeof window.authManager.loadUserProfile === 'function') {
+                        await window.authManager.loadUserProfile();
+                    }
+                    if (modal) modal.classList.add('hidden');
+                    // Reload page to initialize authenticated view
+                    window.location.reload();
+                } catch (e) { console.error(e); showErr('Sign in error'); }
+            });
+
+            signupBtn.addEventListener('click', async () => {
+                hideErr();
+                const email = document.getElementById('embeddedEmail').value.trim();
+                const password = document.getElementById('embeddedPassword').value;
+                if (!email || !password) return showErr('Enter email and password');
+                try {
+                    const client = window.authManager ? window.authManager.getSupabaseClient() : (window.supabase && window.ENV_CONFIG ? window.supabase.createClient(window.ENV_CONFIG.SUPABASE_URL, window.ENV_CONFIG.SUPABASE_ANON_KEY) : null);
+                    if (!client) return showErr('Auth client not available');
+                    const { data, error } = await client.auth.signUp({ email, password });
+                    console.log('embedded signUp', data, error);
+                    if (error) return showErr(error.message || 'Signup failed');
+                    showErr('Signup successful — check email if confirmation required.');
+                } catch (e) { console.error(e); showErr('Signup error'); }
+            });
+
+            if (cancel) cancel.addEventListener('click', () => { if(modal) modal.classList.add('hidden'); });
+        })();
+    </script>
+    <script src="data.js"></script>
+    <script src="map.js"></script>
+    <script src="user_overlays.js"></script>
+    <script src="role_switch.js"></script>
+    <script src="upload_kml.js"></script>
+</body>
+
+</html>
+

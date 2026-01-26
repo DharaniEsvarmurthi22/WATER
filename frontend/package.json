@@ -2,7 +2,7 @@
     "name": "water-dashboard-frontend",
     "version": "1.0.0",
     "scripts": {
-        "start": "npx http-server . -p 8080 -c-1"
+        "start": "npx http-server . -p 8080 -c-1 -i login.html"
     },
     "devDependencies": {
         "http-server": "^14.1.1"

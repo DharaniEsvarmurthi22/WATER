@@ -29,6 +29,12 @@ const ENV_CONFIG = {
 ENV_CONFIG.SUPABASE_URL = 'https://uvqcctheqvuilwfbpqcd.supabase.co';
 ENV_CONFIG.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2cWNjdGhlcXZ1aWx3ZmJwcWNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNDA0NDgsImV4cCI6MjA3NjcxNjQ0OH0.BDPOk3CicghYD18lqRCvITbLyHKLP_mQWtprXrkXphs';
 
+// Storage bucket for KML overlays (used by upload_kml.js)
+ENV_CONFIG.KML_BUCKET = 'kml-overlays';
+
+// Backward-compatible overlay config object
+window.OVERLAY_CONFIG = window.OVERLAY_CONFIG || { storageBucket: ENV_CONFIG.KML_BUCKET };
+
 // Make configuration available globally
 window.ENV_CONFIG = ENV_CONFIG;
 
